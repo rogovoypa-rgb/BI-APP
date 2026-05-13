@@ -191,7 +191,127 @@ with total_cols[4]:
     st.markdown(f"<div style='font-size: 16px;'><b>{year_quantity:,.0f}</b></div>", unsafe_allow_html=True)
 
 st.divider()
+# ==========================================
+# 7. НОВЫЙ БЛОК: АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ
+# ==========================================
+st.divider()
+st.subheader(f"🏆 АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
 
+# Рассчитываем выручку по контрагентам за год
+customer_revenue = df_year.groupby('Контрагент')['Выручка'].sum().reset_index()
+customer_revenue = customer_revenue.sort_values('Выручка', ascending=False)
+
+# Определяем топ-5 контрагентов
+top5_customers = customer_revenue.head(5)['Контрагент'].tolist()
+
+# Создаём помесячную выручку для всех контрагентов
+monthly_customer_revenue = df_year.groupby(['Контрагент', 'Название_месяца', 'Месяц'])['Выручка'].sum().reset_index()
+
+# Сортируем месяцы в правильном порядке
+month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
+               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+monthly_customer_revenue['Название_месяца'] = pd.Categorical(monthly_customer_revenue['Название_месяца'], 
+                                                               categories=month_order, ordered=True)
+monthly_customer_revenue = monthly_customer_revenue.sort_values('Название_месяца')
+
+# Строим таблицу: топ-5 + "Остальные"
+table_data = []
+
+# Добавляем топ-5 контрагентов
+for customer in top5_customers:
+    row = {'Контрагент': customer}
+    
+    # Годовая выручка
+    yearly = customer_revenue[customer_revenue['Контрагент'] == customer]['Выручка'].values[0]
+    row['Выручка за год'] = yearly
+    
+    # Помесячная выручка
+    monthly_data = monthly_customer_revenue[monthly_customer_revenue['Контрагент'] == customer]
+    for month in month_order:
+        month_value = monthly_data[monthly_data['Название_месяца'] == month]['Выручка'].sum()
+        row[month] = month_value
+    
+    table_data.append(row)
+
+# Добавляем строку "Остальные"
+other_customers = customer_revenue[~customer_revenue['Контрагент'].isin(top5_customers)]
+other_yearly = other_customers['Выручка'].sum()
+
+row_other = {'Контрагент': '📦 ОСТАЛЬНЫЕ (все прочие контрагенты)'}
+row_other['Выручка за год'] = other_yearly
+
+# Помесячная выручка для остальных
+for month in month_order:
+    month_value = monthly_customer_revenue[~monthly_customer_revenue['Контрагент'].isin(top5_customers)]
+    month_value = month_value[month_value['Название_месяца'] == month]['Выручка'].sum()
+    row_other[month] = month_value
+
+table_data.append(row_other)
+
+# Создаём DataFrame для отображения
+df_top5_table = pd.DataFrame(table_data)
+
+# Форматируем числа
+for col in df_top5_table.columns:
+    if col != 'Контрагент':
+        df_top5_table[col] = df_top5_table[col].apply(lambda x: f"{x:,.0f} ₽" if pd.notna(x) else "0 ₽")
+
+# Отображаем таблицу с стилизацией
+st.markdown("""
+<style>
+.top5-table {
+    font-size: 14px;
+}
+.top5-table th {
+    background-color: #2E86AB;
+    color: white;
+    padding: 8px;
+    text-align: center;
+}
+.top5-table td {
+    padding: 6px;
+    text-align: right;
+}
+.top5-table td:first-child {
+    text-align: left;
+    font-weight: bold;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# Отображаем таблицу
+st.dataframe(
+    df_top5_table,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "Контрагент": st.column_config.TextColumn("Контрагент / Покупатель", width="medium"),
+        "Выручка за год": st.column_config.TextColumn("💰 Выручка за год", width="small"),
+        "Январь": st.column_config.TextColumn("Янв", width="small"),
+        "Февраль": st.column_config.TextColumn("Фев", width="small"),
+        "Март": st.column_config.TextColumn("Мар", width="small"),
+        "Апрель": st.column_config.TextColumn("Апр", width="small"),
+        "Май": st.column_config.TextColumn("Май", width="small"),
+        "Июнь": st.column_config.TextColumn("Июн", width="small"),
+        "Июль": st.column_config.TextColumn("Июл", width="small"),
+        "Август": st.column_config.TextColumn("Авг", width="small"),
+        "Сентябрь": st.column_config.TextColumn("Сен", width="small"),
+        "Октябрь": st.column_config.TextColumn("Окт", width="small"),
+        "Ноябрь": st.column_config.TextColumn("Ноя", width="small"),
+        "Декабрь": st.column_config.TextColumn("Дек", width="small"),
+    }
+)
+
+# Добавляем информационную строку с итогами
+total_top5 = customer_revenue[customer_revenue['Контрагент'].isin(top5_customers)]['Выручка'].sum()
+total_all = year_revenue
+total_others = total_all - total_top5
+
+st.caption(f"📊 Из {total_all:,.0f} ₽ общей выручки за {selected_year} год:")
+st.caption(f"   • Топ-5 контрагентов: {total_top5:,.0f} ₽ ({total_top5/total_all*100:.1f}%)")
+st.caption(f"   • Остальные контрагенты: {total_others:,.0f} ₽ ({total_others/total_all*100:.1f}%)")
+
+st.divider()
 # ==========================================
 # 7. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
 # ==========================================
