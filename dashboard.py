@@ -287,28 +287,102 @@ table_data.append(row_other)
 
 df_top5_table = pd.DataFrame(table_data)
 
-# Отображаем таблицу с форматированием через column_config
-st.dataframe(
-    df_top5_table,
-    use_container_width=True,
-    hide_index=True,
-    column_config={
-        "Контрагент": st.column_config.TextColumn("Контрагент / Покупатель", width="medium"),
-        "Выручка за год": st.column_config.NumberColumn("💰 Выручка за год", format="%.0f ₽", width="small"),
-        "Январь": st.column_config.NumberColumn("Янв", format="%.0f ₽", width="small"),
-        "Февраль": st.column_config.NumberColumn("Фев", format="%.0f ₽", width="small"),
-        "Март": st.column_config.NumberColumn("Мар", format="%.0f ₽", width="small"),
-        "Апрель": st.column_config.NumberColumn("Апр", format="%.0f ₽", width="small"),
-        "Май": st.column_config.NumberColumn("Май", format="%.0f ₽", width="small"),
-        "Июнь": st.column_config.NumberColumn("Июн", format="%.0f ₽", width="small"),
-        "Июль": st.column_config.NumberColumn("Июл", format="%.0f ₽", width="small"),
-        "Август": st.column_config.NumberColumn("Авг", format="%.0f ₽", width="small"),
-        "Сентябрь": st.column_config.NumberColumn("Сен", format="%.0f ₽", width="small"),
-        "Октябрь": st.column_config.NumberColumn("Окт", format="%.0f ₽", width="small"),
-        "Ноябрь": st.column_config.NumberColumn("Ноя", format="%.0f ₽", width="small"),
-        "Декабрь": st.column_config.NumberColumn("Дек", format="%.0f ₽", width="small"),
-    }
-)
+# Форматируем числа с пробелами для отображения в HTML
+def format_with_spaces(x):
+    if pd.isna(x):
+        return "0"
+    try:
+        return f"{int(x):,}".replace(",", " ")
+    except (ValueError, TypeError):
+        return str(x)
+
+# Создаём HTML-таблицу для кастомного отображения
+html_table = """
+<style>
+.top5-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Segoe UI', Arial, sans-serif;
+}
+.top5-table th {
+    background-color: #2E86AB;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    position: sticky;
+    top: 0;
+}
+.top5-table td {
+    padding: 8px;
+    text-align: right;
+    border-bottom: 1px solid #e0e0e0;
+}
+.top5-table td:first-child {
+    text-align: left;
+    font-weight: bold;
+    background-color: #f8f9fa;
+}
+.top5-table tr:last-child td:first-child {
+    background-color: #e8f0fe;
+}
+.top5-table td:last-child {
+    text-align: right;
+}
+.top5-table tr:last-child td {
+    font-weight: bold;
+    background-color: #f0f2f6;
+}
+.month-cell {
+    font-size: 12px;
+}
+.year-cell {
+    font-weight: bold;
+}
+</style>
+
+<table class="top5-table">
+    <thead>
+        <tr>
+            <th>Контрагент / Покупатель</th>
+            <th>💰 Выручка за год</th>
+"""
+
+# Добавляем заголовки месяцев
+for month in month_order:
+    short_name = month[:3]  # Янв, Фев, Мар и т.д.
+    html_table += f"<th>{short_name}</th>"
+
+html_table += """
+        </tr>
+    </thead>
+    <tbody>
+"""
+
+# Добавляем строки с данными
+for idx, row in df_top5_table.iterrows():
+    html_table += "<tr>"
+    
+    # Контрагент
+    html_table += f"<td style='font-weight: bold;'>{row['Контрагент']}</td>"
+    
+    # Выручка за год (жирный шрифт)
+    html_table += f"<td style='font-weight: bold;'>{format_with_spaces(row['Выручка за год'])} ₽</td>"
+    
+    # Месяцы (уменьшенный шрифт 12px)
+    for month in month_order:
+        value = row[month]
+        html_table += f"<td class='month-cell'>{format_with_spaces(value)} ₽</td>"
+    
+    html_table += "</tr>"
+
+html_table += """
+    </tbody>
+</table>
+"""
+
+# Отображаем HTML-таблицу
+st.markdown(html_table, unsafe_allow_html=True)
 
 # Итоговая статистика
 total_top5 = customer_revenue[customer_revenue['Контрагент'].isin(top5_customers)]['Выручка'].sum()
@@ -320,7 +394,6 @@ st.caption(f"   • Топ-5 контрагентов: {format_number(total_top5
 st.caption(f"   • Остальные контрагенты: {format_number(total_others)} ₽ ({format_float(total_others/total_all*100, 1)}%)")
 
 st.divider()
-
 # ==========================================
 # 8. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
 # ==========================================
