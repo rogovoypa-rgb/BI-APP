@@ -197,28 +197,32 @@ st.divider()
 st.divider()
 st.subheader(f"🏆 АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
 
-# Создаём словарь для преобразования номера месяца в название
+# ОЧИЩАЕМ ДАННЫЕ: убираем строки с 'Итого' и преобразуем номера месяцев в числа
+df_year_clean = df_year[df_year['Период.Месяц'] != 'Итого'].copy()
+df_year_clean['Период.Месяц'] = pd.to_numeric(df_year_clean['Период.Месяц'], errors='coerce')
+
+# Убираем строки, где месяц не определился
+df_year_clean = df_year_clean.dropna(subset=['Период.Месяц'])
+
+# Словарь для преобразования номера месяца в название
 month_names = {
     1: 'Январь', 2: 'Февраль', 3: 'Март', 4: 'Апрель',
     5: 'Май', 6: 'Июнь', 7: 'Июль', 8: 'Август',
     9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
 }
 
-# Добавляем номер месяца и название месяца в df_year (если ещё нет)
-if 'Месяц_цифра' not in df_year.columns:
-    df_year['Месяц_цифра'] = pd.to_datetime(df_year['Дата']).dt.month
-if 'Название_месяца' not in df_year.columns:
-    df_year['Название_месяца'] = df_year['Месяц_цифра'].map(month_names)
+# Добавляем название месяца
+df_year_clean['Название_месяца'] = df_year_clean['Период.Месяц'].map(month_names)
 
 # Рассчитываем выручку по контрагентам за год
-customer_revenue = df_year.groupby('Контрагент')['Выручка'].sum().reset_index()
+customer_revenue = df_year_clean.groupby('Контрагент')['Выручка'].sum().reset_index()
 customer_revenue = customer_revenue.sort_values('Выручка', ascending=False)
 
 # Определяем топ-5 контрагентов
 top5_customers = customer_revenue.head(5)['Контрагент'].tolist()
 
 # Создаём помесячную выручку для всех контрагентов
-monthly_customer_revenue = df_year.groupby(['Контрагент', 'Месяц_цифра', 'Название_месяца'])['Выручка'].sum().reset_index()
+monthly_customer_revenue = df_year_clean.groupby(['Контрагент', 'Период.Месяц', 'Название_месяца'])['Выручка'].sum().reset_index()
 
 # Сортируем месяцы в правильном порядке
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
@@ -265,7 +269,7 @@ table_data.append(row_other)
 # Создаём DataFrame для отображения
 df_top5_table = pd.DataFrame(table_data)
 
-# Отображаем таблицу БЕЗ форматирования в текст (показываем числа)
+# Отображаем таблицу
 st.dataframe(
     df_top5_table,
     use_container_width=True,
@@ -296,6 +300,12 @@ total_others = total_all - total_top5
 st.caption(f"📊 Из {total_all:,.0f} ₽ общей выручки за {selected_year} год:")
 st.caption(f"   • Топ-5 контрагентов: {total_top5:,.0f} ₽ ({total_top5/total_all*100:.1f}%)")
 st.caption(f"   • Остальные контрагенты: {total_others:,.0f} ₽ ({total_others/total_all*100:.1f}%)")
+
+# Отладочная информация (можно удалить после проверки)
+with st.expander("🔧 Техническая информация (для проверки)"):
+    st.write("Топ-5 контрагентов:", top5_customers)
+    st.write("Пример monthly_customer_revenue:")
+    st.dataframe(monthly_customer_revenue.head(10))
 
 st.divider()
 # ==========================================
