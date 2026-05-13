@@ -4,7 +4,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # ==========================================
-# ФУНКЦИЯ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ (пробелы вместо запятых)
+# ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
 # ==========================================
 def format_number(value):
     """Форматирует число с пробелами между разрядами"""
@@ -16,11 +16,21 @@ def format_number(value):
         return str(value)
 
 def format_float(value, decimals=1):
-    """Форматирует число с плавающей точкой"""
+    """Форматирует число с плавающей точкой (запятая как разделитель)"""
     if pd.isna(value):
         return "0"
     try:
-        return f"{value:.{decimals}f}".replace(".", ",").replace(",", " ", 1).replace(",", " ")
+        # Округляем
+        rounded = round(value, decimals)
+        # Преобразуем в строку
+        if decimals == 0:
+            formatted = str(int(rounded))
+        else:
+            # Разделяем целую и дробную части
+            integer_part = int(rounded)
+            fractional_part = abs(int(round((rounded - integer_part) * 10**decimals)))
+            formatted = f"{integer_part},{fractional_part:0{decimals}d}"
+        return formatted
     except (ValueError, TypeError):
         return str(value)
 
@@ -39,7 +49,6 @@ def load_data():
     
     # Работа с датой (столбец 'Документ.Дата')
     df['Дата'] = pd.to_datetime(df['Документ.Дата'], dayfirst=True, errors='coerce')
-    df['Месяц_цифра'] = df['Дата'].dt.month
     df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
     df['Год'] = df['Дата'].dt.year
     
@@ -92,7 +101,7 @@ selected_customers = st.sidebar.multiselect(
 df_filtered = df_year[(df_year['Месяц'] == selected_month) & (df_year['Контрагент'].isin(selected_customers))]
 
 # ==========================================
-# 5. ГОДОВЫЕ МЕТРИКИ (крупно)
+# 5. ГОДОВЫЕ МЕТРИКИ
 # ==========================================
 st.divider()
 st.subheader(f"📈 ИТОГИ ЗА {selected_year} ГОД")
@@ -103,7 +112,7 @@ year_profit = df_year['Валовая_прибыль'].sum()
 year_margin = (year_profit / year_revenue * 100) if year_revenue > 0 else 0
 year_quantity = df_year['Количество'].sum()
 
-# Отображаем 4 метрики в ряд (с форматированием)
+# Отображаем 4 метрики в ряд
 col_y1, col_y2, col_y3, col_y4 = st.columns(4)
 
 with col_y1:
@@ -128,6 +137,7 @@ if len(available_years) > 1 and selected_year > min(available_years):
         st.caption(f"📊 Изменение выручки относительно {prev_year} года: {format_float(revenue_change, 1)}%")
 
 st.divider()
+
 # ==========================================
 # 6. ПОМЕСЯЧНАЯ РАЗБИВКА
 # ==========================================
@@ -221,6 +231,7 @@ with total_cols[4]:
     st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
 
 st.divider()
+
 # ==========================================
 # 7. АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ
 # ==========================================
@@ -394,6 +405,7 @@ st.caption(f"   • Топ-5 контрагентов: {format_number(total_top5
 st.caption(f"   • Остальные контрагенты: {format_number(total_others)} ₽ ({format_float(total_others/total_all*100, 1)}%)")
 
 st.divider()
+
 # ==========================================
 # 8. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
 # ==========================================
@@ -425,15 +437,13 @@ with col4:
 col_left, col_right = st.columns(2)
 
 with col_left:
-    top_customers = df_filtered.groupby('Контрагент')['Выручка'].sum().nlargest(10).reset_index()
-    if not top_customers.empty:
-        fig1 = px.bar(top_customers, x='Выручка', y='Контрагент', orientation='h',
+    top_customers_chart = df_filtered.groupby('Контрагент')['Выручка'].sum().nlargest(10).reset_index()
+    if not top_customers_chart.empty:
+        fig1 = px.bar(top_customers_chart, x='Выручка', y='Контрагент', orientation='h',
                       title='Топ-10 контрагентов по выручке',
                       color='Выручка', color_continuous_scale='Blues',
                       labels={'Выручка': 'Выручка (₽)', 'Контрагент': ''})
         fig1.update_layout(height=500)
-        # Форматирование чисел на графике
-        fig1.update_xaxis(tickformat=',.0f')
         st.plotly_chart(fig1, use_container_width=True)
     else:
         st.info("Нет данных для отображения")
