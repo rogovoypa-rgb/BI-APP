@@ -18,8 +18,10 @@ def load_data():
     
     # Работа с датой (столбец 'Документ.Дата')
     df['Дата'] = pd.to_datetime(df['Документ.Дата'], dayfirst=True, errors='coerce')
+    df['Месяц_цифра'] = df['Дата'].dt.month
     df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
     df['Год'] = df['Дата'].dt.year
+    df['Название_месяца'] = df['Дата'].dt.strftime('%B')  # Полное название месяца
     
     # Расчёт прибыли и рентабельности
     df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость']
@@ -41,14 +43,14 @@ df = load_data()
 # ==========================================
 available_years = sorted(df['Год'].dropna().unique())
 if len(available_years) == 0:
-    available_years = [2024]  # fallback
+    available_years = [2024]
 
 # ==========================================
 # 4. БОКОВАЯ ПАНЕЛЬ С ФИЛЬТРАМИ
 # ==========================================
 st.sidebar.header("🔍 Фильтры")
 
-# ---- НОВЫЙ ФИЛЬТР: ВЫБОР ГОДА ----
+# Фильтр: выбор года
 selected_year = st.sidebar.selectbox("📅 Выберите год", available_years)
 
 # Фильтруем данные по году
@@ -70,7 +72,7 @@ selected_customers = st.sidebar.multiselect(
 df_filtered = df_year[(df_year['Месяц'] == selected_month) & (df_year['Контрагент'].isin(selected_customers))]
 
 # ==========================================
-# 5. НОВЫЙ БЛОК: ГОДОВЫЕ МЕТРИКИ (вверху страницы)
+# 5. ГОДОВЫЕ МЕТРИКИ (крупно)
 # ==========================================
 st.divider()
 st.subheader(f"📈 ИТОГИ ЗА {selected_year} ГОД")
@@ -81,7 +83,7 @@ year_profit = df_year['Валовая_прибыль'].sum()
 year_margin = (year_profit / year_revenue * 100) if year_revenue > 0 else 0
 year_quantity = df_year['Количество'].sum()
 
-# Отображаем 4 метрики в ряд
+# Отображаем 4 метрики в ряд (крупный размер)
 col_y1, col_y2, col_y3, col_y4 = st.columns(4)
 
 with col_y1:
@@ -96,7 +98,7 @@ with col_y3:
 with col_y4:
     st.metric("📦 Продано за год (шт)", f"{year_quantity:,.0f}")
 
-# Дополнительно: изменение по сравнению с предыдущим годом (если есть)
+# Изменение по сравнению с предыдущим годом
 if len(available_years) > 1 and selected_year > min(available_years):
     prev_year = selected_year - 1
     if prev_year in available_years:
@@ -108,7 +110,90 @@ if len(available_years) > 1 and selected_year > min(available_years):
 st.divider()
 
 # ==========================================
-# 6. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
+# 6. НОВЫЙ БЛОК: ПОМЕСЯЧНАЯ РАЗБИВКА (уменьшенный размер)
+# ==========================================
+st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
+
+# Группируем данные по месяцам
+monthly_summary = df_year.groupby(['Месяц', 'Название_месяца']).agg({
+    'Выручка': 'sum',
+    'Валовая_прибыль': 'sum',
+    'Количество': 'sum'
+}).reset_index()
+
+# Рассчитываем рентабельность по месяцам
+monthly_summary['Рентабельность_%'] = (monthly_summary['Валовая_прибыль'] / monthly_summary['Выручка'] * 100).fillna(0)
+
+# Сортируем по месяцам (по дате, а не по алфавиту)
+monthly_summary['Месяц_сортировка'] = monthly_summary['Месяц']
+monthly_summary = monthly_summary.sort_values('Месяц_сортировка')
+
+# Функция для отображения уменьшенных метрик (на 30% меньше)
+def render_small_metric(label, value, help_text=None):
+    st.markdown(
+        f"""
+        <div style='
+            background-color: #F0F2F6;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+        '>
+            <div style='
+                font-size: 14px;
+                color: #666;
+                margin-bottom: 5px;
+            '>{label}</div>
+            <div style='
+                font-size: 20px;
+                font-weight: bold;
+                color: #1f1f1f;
+            '>{value}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Отображаем таблицу с помесячными данными
+for idx, row in monthly_summary.iterrows():
+    # Название месяца
+    month_name = row['Название_месяца']
+    
+    # Создаём строку с 4 колонками
+    cols = st.columns([1.5, 1, 1, 1, 1])  # Первая колонка шире (название месяца)
+    
+    with cols[0]:
+        st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{month_name}</div>", unsafe_allow_html=True)
+    
+    with cols[1]:
+        render_small_metric("Выручка", f"{row['Выручка']:,.0f} ₽")
+    
+    with cols[2]:
+        render_small_metric("Прибыль", f"{row['Валовая_прибыль']:,.0f} ₽")
+    
+    with cols[3]:
+        render_small_metric("Рентабельность", f"{row['Рентабельность_%']:.1f}%")
+    
+    with cols[4]:
+        render_small_metric("Кол-во (шт)", f"{row['Количество']:,.0f}")
+
+# Добавляем строку-итог
+st.markdown("---")
+total_cols = st.columns([1.5, 1, 1, 1, 1])
+with total_cols[0]:
+    st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
+with total_cols[1]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{year_revenue:,.0f} ₽</b></div>", unsafe_allow_html=True)
+with total_cols[2]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{year_profit:,.0f} ₽</b></div>", unsafe_allow_html=True)
+with total_cols[3]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{year_margin:.1f}%</b></div>", unsafe_allow_html=True)
+with total_cols[4]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{year_quantity:,.0f}</b></div>", unsafe_allow_html=True)
+
+st.divider()
+
+# ==========================================
+# 7. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
 # ==========================================
 st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month}")
 
@@ -131,7 +216,7 @@ with col4:
     st.metric("📦 Продано (шт)", f"{total_quantity:,.0f}")
 
 # ==========================================
-# 7. ГРАФИКИ (остаются без изменений, но работают с df_filtered)
+# 8. ГРАФИКИ
 # ==========================================
 
 # Два графика в ряд
@@ -183,7 +268,7 @@ else:
     st.info("Нет данных для отображения динамики")
 
 # ==========================================
-# 8. ТАБЛИЦА С ДАННЫМИ
+# 9. ТАБЛИЦА С ДАННЫМИ
 # ==========================================
 st.subheader("📋 Детальные данные по продажам")
 display_cols = ['Дата', 'Контрагент', 'Номенклатура', 'Выручка', 'Валовая_прибыль', 'Рентабельность_%', 'Количество']
@@ -204,7 +289,7 @@ else:
     st.warning("Нет данных для отображения. Попробуйте изменить фильтры.")
 
 # ==========================================
-# 9. ИТОГОВАЯ СТАТИСТИКА
+# 10. ИТОГОВАЯ СТАТИСТИКА
 # ==========================================
 st.divider()
 st.caption(f"📅 Данные за {selected_month} {selected_year} | Всего записей: {len(df_filtered)} | Обновлено: автоматически при запуске")
