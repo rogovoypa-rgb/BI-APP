@@ -128,14 +128,27 @@ if len(available_years) > 1 and selected_year > min(available_years):
         st.caption(f"📊 Изменение выручки относительно {prev_year} года: {format_float(revenue_change, 1)}%")
 
 st.divider()
-
 # ==========================================
 # 6. ПОМЕСЯЧНАЯ РАЗБИВКА
 # ==========================================
 st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
 
+# Создаём словарь для преобразования номера месяца в название
+month_names_full = {
+    1: 'Январь', 2: 'Февраль', 3: 'Март', 4: 'Апрель',
+    5: 'Май', 6: 'Июнь', 7: 'Июль', 8: 'Август',
+    9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
+}
+
+# Добавляем название месяца в df_year (на основе столбца 'Период.Месяц')
+df_year_monthly = df_year.copy()
+df_year_monthly = df_year_monthly[df_year_monthly['Период.Месяц'] != 'Итого'].copy()
+df_year_monthly['Период.Месяц'] = pd.to_numeric(df_year_monthly['Период.Месяц'], errors='coerce')
+df_year_monthly = df_year_monthly.dropna(subset=['Период.Месяц'])
+df_year_monthly['Название_месяца'] = df_year_monthly['Период.Месяц'].map(month_names_full)
+
 # Группируем данные по месяцам
-monthly_summary = df_year.groupby(['Месяц', 'Название_месяца']).agg({
+monthly_summary = df_year_monthly.groupby(['Период.Месяц', 'Название_месяца']).agg({
     'Выручка': 'sum',
     'Валовая_прибыль': 'sum',
     'Количество': 'sum'
@@ -144,8 +157,8 @@ monthly_summary = df_year.groupby(['Месяц', 'Название_месяца'
 # Рассчитываем рентабельность по месяцам
 monthly_summary['Рентабельность_%'] = (monthly_summary['Валовая_прибыль'] / monthly_summary['Выручка'] * 100).fillna(0)
 
-# Сортируем по месяцам
-monthly_summary = monthly_summary.sort_values('Месяц')
+# Сортируем по номеру месяца
+monthly_summary = monthly_summary.sort_values('Период.Месяц')
 
 # Функция для отображения уменьшенных метрик
 def render_small_metric(label, value, suffix=""):
@@ -208,7 +221,6 @@ with total_cols[4]:
     st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
 
 st.divider()
-
 # ==========================================
 # 7. АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ
 # ==========================================
