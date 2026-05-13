@@ -237,12 +237,11 @@ for customer in top5_customers:
     
     # Помесячная выручка
     for month in month_order:
-        # Ищем данные по этому контрагенту и месяцу
         month_value = monthly_customer_revenue[
             (monthly_customer_revenue['Контрагент'] == customer) & 
             (monthly_customer_revenue['Название_месяца'] == month)
         ]['Выручка'].sum()
-        row[month] = month_value if month_value > 0 else 0
+        row[month] = month_value
     
     table_data.append(row)
 
@@ -259,45 +258,33 @@ for month in month_order:
         (~monthly_customer_revenue['Контрагент'].isin(top5_customers)) & 
         (monthly_customer_revenue['Название_месяца'] == month)
     ]['Выручка'].sum()
-    row_other[month] = month_value if month_value > 0 else 0
+    row_other[month] = month_value
 
 table_data.append(row_other)
 
 # Создаём DataFrame для отображения
 df_top5_table = pd.DataFrame(table_data)
 
-# Отладочная информация (можно убрать после проверки)
-with st.expander("🔧 Техническая информация (для отладки)"):
-    st.write("Топ-5 контрагентов:", top5_customers)
-    st.write("Пример данных monthly_customer_revenue:")
-    st.dataframe(monthly_customer_revenue.head(10))
-
-# Форматируем числа для отображения (создаём копию для отображения)
-df_top5_display = df_top5_table.copy()
-for col in df_top5_display.columns:
-    if col != 'Контрагент':
-        df_top5_display[col] = df_top5_display[col].apply(lambda x: f"{x:,.0f} ₽" if x > 0 else "0 ₽")
-
-# Отображаем таблицу
+# Отображаем таблицу БЕЗ форматирования в текст (показываем числа)
 st.dataframe(
-    df_top5_display,
+    df_top5_table,
     use_container_width=True,
     hide_index=True,
     column_config={
         "Контрагент": st.column_config.TextColumn("Контрагент / Покупатель", width="medium"),
-        "Выручка за год": st.column_config.TextColumn("💰 Выручка за год", width="small"),
-        "Январь": st.column_config.TextColumn("Янв", width="small"),
-        "Февраль": st.column_config.TextColumn("Фев", width="small"),
-        "Март": st.column_config.TextColumn("Мар", width="small"),
-        "Апрель": st.column_config.TextColumn("Апр", width="small"),
-        "Май": st.column_config.TextColumn("Май", width="small"),
-        "Июнь": st.column_config.TextColumn("Июн", width="small"),
-        "Июль": st.column_config.TextColumn("Июл", width="small"),
-        "Август": st.column_config.TextColumn("Авг", width="small"),
-        "Сентябрь": st.column_config.TextColumn("Сен", width="small"),
-        "Октябрь": st.column_config.TextColumn("Окт", width="small"),
-        "Ноябрь": st.column_config.TextColumn("Ноя", width="small"),
-        "Декабрь": st.column_config.TextColumn("Дек", width="small"),
+        "Выручка за год": st.column_config.NumberColumn("💰 Выручка за год", format="%.0f ₽", width="small"),
+        "Январь": st.column_config.NumberColumn("Янв", format="%.0f ₽", width="small"),
+        "Февраль": st.column_config.NumberColumn("Фев", format="%.0f ₽", width="small"),
+        "Март": st.column_config.NumberColumn("Мар", format="%.0f ₽", width="small"),
+        "Апрель": st.column_config.NumberColumn("Апр", format="%.0f ₽", width="small"),
+        "Май": st.column_config.NumberColumn("Май", format="%.0f ₽", width="small"),
+        "Июнь": st.column_config.NumberColumn("Июн", format="%.0f ₽", width="small"),
+        "Июль": st.column_config.NumberColumn("Июл", format="%.0f ₽", width="small"),
+        "Август": st.column_config.NumberColumn("Авг", format="%.0f ₽", width="small"),
+        "Сентябрь": st.column_config.NumberColumn("Сен", format="%.0f ₽", width="small"),
+        "Октябрь": st.column_config.NumberColumn("Окт", format="%.0f ₽", width="small"),
+        "Ноябрь": st.column_config.NumberColumn("Ноя", format="%.0f ₽", width="small"),
+        "Декабрь": st.column_config.NumberColumn("Дек", format="%.0f ₽", width="small"),
     }
 )
 
