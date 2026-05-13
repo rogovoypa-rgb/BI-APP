@@ -197,6 +197,19 @@ st.divider()
 st.divider()
 st.subheader(f"🏆 АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
 
+# Создаём словарь для преобразования номера месяца в название
+month_names = {
+    1: 'Январь', 2: 'Февраль', 3: 'Март', 4: 'Апрель',
+    5: 'Май', 6: 'Июнь', 7: 'Июль', 8: 'Август',
+    9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
+}
+
+# Добавляем номер месяца и название месяца в df_year (если ещё нет)
+if 'Месяц_цифра' not in df_year.columns:
+    df_year['Месяц_цифра'] = pd.to_datetime(df_year['Дата']).dt.month
+if 'Название_месяца' not in df_year.columns:
+    df_year['Название_месяца'] = df_year['Месяц_цифра'].map(month_names)
+
 # Рассчитываем выручку по контрагентам за год
 customer_revenue = df_year.groupby('Контрагент')['Выручка'].sum().reset_index()
 customer_revenue = customer_revenue.sort_values('Выручка', ascending=False)
@@ -205,14 +218,11 @@ customer_revenue = customer_revenue.sort_values('Выручка', ascending=Fals
 top5_customers = customer_revenue.head(5)['Контрагент'].tolist()
 
 # Создаём помесячную выручку для всех контрагентов
-monthly_customer_revenue = df_year.groupby(['Контрагент', 'Название_месяца', 'Месяц'])['Выручка'].sum().reset_index()
+monthly_customer_revenue = df_year.groupby(['Контрагент', 'Месяц_цифра', 'Название_месяца'])['Выручка'].sum().reset_index()
 
 # Сортируем месяцы в правильном порядке
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
                'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
-monthly_customer_revenue['Название_месяца'] = pd.Categorical(monthly_customer_revenue['Название_месяца'], 
-                                                               categories=month_order, ordered=True)
-monthly_customer_revenue = monthly_customer_revenue.sort_values('Название_месяца')
 
 # Строим таблицу: топ-5 + "Остальные"
 table_data = []
@@ -226,10 +236,13 @@ for customer in top5_customers:
     row['Выручка за год'] = yearly
     
     # Помесячная выручка
-    monthly_data = monthly_customer_revenue[monthly_customer_revenue['Контрагент'] == customer]
     for month in month_order:
-        month_value = monthly_data[monthly_data['Название_месяца'] == month]['Выручка'].sum()
-        row[month] = month_value
+        # Ищем данные по этому контрагенту и месяцу
+        month_value = monthly_customer_revenue[
+            (monthly_customer_revenue['Контрагент'] == customer) & 
+            (monthly_customer_revenue['Название_месяца'] == month)
+        ]['Выручка'].sum()
+        row[month] = month_value if month_value > 0 else 0
     
     table_data.append(row)
 
@@ -242,46 +255,32 @@ row_other['Выручка за год'] = other_yearly
 
 # Помесячная выручка для остальных
 for month in month_order:
-    month_value = monthly_customer_revenue[~monthly_customer_revenue['Контрагент'].isin(top5_customers)]
-    month_value = month_value[month_value['Название_месяца'] == month]['Выручка'].sum()
-    row_other[month] = month_value
+    month_value = monthly_customer_revenue[
+        (~monthly_customer_revenue['Контрагент'].isin(top5_customers)) & 
+        (monthly_customer_revenue['Название_месяца'] == month)
+    ]['Выручка'].sum()
+    row_other[month] = month_value if month_value > 0 else 0
 
 table_data.append(row_other)
 
 # Создаём DataFrame для отображения
 df_top5_table = pd.DataFrame(table_data)
 
-# Форматируем числа
-for col in df_top5_table.columns:
-    if col != 'Контрагент':
-        df_top5_table[col] = df_top5_table[col].apply(lambda x: f"{x:,.0f} ₽" if pd.notna(x) else "0 ₽")
+# Отладочная информация (можно убрать после проверки)
+with st.expander("🔧 Техническая информация (для отладки)"):
+    st.write("Топ-5 контрагентов:", top5_customers)
+    st.write("Пример данных monthly_customer_revenue:")
+    st.dataframe(monthly_customer_revenue.head(10))
 
-# Отображаем таблицу с стилизацией
-st.markdown("""
-<style>
-.top5-table {
-    font-size: 14px;
-}
-.top5-table th {
-    background-color: #2E86AB;
-    color: white;
-    padding: 8px;
-    text-align: center;
-}
-.top5-table td {
-    padding: 6px;
-    text-align: right;
-}
-.top5-table td:first-child {
-    text-align: left;
-    font-weight: bold;
-}
-</style>
-""", unsafe_allow_html=True)
+# Форматируем числа для отображения (создаём копию для отображения)
+df_top5_display = df_top5_table.copy()
+for col in df_top5_display.columns:
+    if col != 'Контрагент':
+        df_top5_display[col] = df_top5_display[col].apply(lambda x: f"{x:,.0f} ₽" if x > 0 else "0 ₽")
 
 # Отображаем таблицу
 st.dataframe(
-    df_top5_table,
+    df_top5_display,
     use_container_width=True,
     hide_index=True,
     column_config={
