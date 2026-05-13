@@ -4,6 +4,27 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # ==========================================
+# ФУНКЦИЯ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ (пробелы вместо запятых)
+# ==========================================
+def format_number(value):
+    """Форматирует число с пробелами между разрядами"""
+    if pd.isna(value):
+        return "0"
+    try:
+        return f"{int(value):,}".replace(",", " ")
+    except (ValueError, TypeError):
+        return str(value)
+
+def format_float(value, decimals=1):
+    """Форматирует число с плавающей точкой"""
+    if pd.isna(value):
+        return "0"
+    try:
+        return f"{value:.{decimals}f}".replace(".", ",").replace(",", " ", 1).replace(",", " ")
+    except (ValueError, TypeError):
+        return str(value)
+
+# ==========================================
 # 1. НАСТРОЙКА СТРАНИЦЫ
 # ==========================================
 st.set_page_config(page_title="BI Портал продаж", layout="wide")
@@ -21,7 +42,6 @@ def load_data():
     df['Месяц_цифра'] = df['Дата'].dt.month
     df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
     df['Год'] = df['Дата'].dt.year
-    df['Название_месяца'] = df['Дата'].dt.strftime('%B')  # Полное название месяца
     
     # Расчёт прибыли и рентабельности
     df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость']
@@ -83,20 +103,20 @@ year_profit = df_year['Валовая_прибыль'].sum()
 year_margin = (year_profit / year_revenue * 100) if year_revenue > 0 else 0
 year_quantity = df_year['Количество'].sum()
 
-# Отображаем 4 метрики в ряд (крупный размер)
+# Отображаем 4 метрики в ряд (с форматированием)
 col_y1, col_y2, col_y3, col_y4 = st.columns(4)
 
 with col_y1:
-    st.metric("💰 Годовая выручка", f"{year_revenue:,.0f} ₽")
+    st.metric("💰 Годовая выручка", f"{format_number(year_revenue)} ₽")
 
 with col_y2:
-    st.metric("📈 Годовая валовая прибыль", f"{year_profit:,.0f} ₽")
+    st.metric("📈 Годовая валовая прибыль", f"{format_number(year_profit)} ₽")
 
 with col_y3:
-    st.metric("🎯 Годовая рентабельность", f"{year_margin:.1f}%")
+    st.metric("🎯 Годовая рентабельность", f"{format_float(year_margin, 1)}%")
 
 with col_y4:
-    st.metric("📦 Продано за год (шт)", f"{year_quantity:,.0f}")
+    st.metric("📦 Продано за год (шт)", f"{format_number(year_quantity)}")
 
 # Изменение по сравнению с предыдущим годом
 if len(available_years) > 1 and selected_year > min(available_years):
@@ -105,12 +125,12 @@ if len(available_years) > 1 and selected_year > min(available_years):
         df_prev = df[df['Год'] == prev_year]
         prev_revenue = df_prev['Выручка'].sum()
         revenue_change = ((year_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0
-        st.caption(f"📊 Изменение выручки относительно {prev_year} года: {revenue_change:+.1f}%")
+        st.caption(f"📊 Изменение выручки относительно {prev_year} года: {format_float(revenue_change, 1)}%")
 
 st.divider()
 
 # ==========================================
-# 6. НОВЫЙ БЛОК: ПОМЕСЯЧНАЯ РАЗБИВКА (уменьшенный размер)
+# 6. ПОМЕСЯЧНАЯ РАЗБИВКА
 # ==========================================
 st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
 
@@ -124,12 +144,11 @@ monthly_summary = df_year.groupby(['Месяц', 'Название_месяца'
 # Рассчитываем рентабельность по месяцам
 monthly_summary['Рентабельность_%'] = (monthly_summary['Валовая_прибыль'] / monthly_summary['Выручка'] * 100).fillna(0)
 
-# Сортируем по месяцам (по дате, а не по алфавиту)
-monthly_summary['Месяц_сортировка'] = monthly_summary['Месяц']
-monthly_summary = monthly_summary.sort_values('Месяц_сортировка')
+# Сортируем по месяцам
+monthly_summary = monthly_summary.sort_values('Месяц')
 
-# Функция для отображения уменьшенных метрик (на 30% меньше)
-def render_small_metric(label, value, help_text=None):
+# Функция для отображения уменьшенных метрик
+def render_small_metric(label, value, suffix=""):
     st.markdown(
         f"""
         <div style='
@@ -147,7 +166,7 @@ def render_small_metric(label, value, help_text=None):
                 font-size: 20px;
                 font-weight: bold;
                 color: #1f1f1f;
-            '>{value}</div>
+            '>{value}{suffix}</div>
         </div>
         """,
         unsafe_allow_html=True
@@ -155,53 +174,49 @@ def render_small_metric(label, value, help_text=None):
 
 # Отображаем таблицу с помесячными данными
 for idx, row in monthly_summary.iterrows():
-    # Название месяца
     month_name = row['Название_месяца']
     
-    # Создаём строку с 4 колонками
-    cols = st.columns([1.5, 1, 1, 1, 1])  # Первая колонка шире (название месяца)
+    cols = st.columns([1.5, 1, 1, 1, 1])
     
     with cols[0]:
         st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{month_name}</div>", unsafe_allow_html=True)
     
     with cols[1]:
-        render_small_metric("Выручка", f"{row['Выручка']:,.0f} ₽")
+        render_small_metric("Выручка", format_number(row['Выручка']), " ₽")
     
     with cols[2]:
-        render_small_metric("Прибыль", f"{row['Валовая_прибыль']:,.0f} ₽")
+        render_small_metric("Прибыль", format_number(row['Валовая_прибыль']), " ₽")
     
     with cols[3]:
-        render_small_metric("Рентабельность", f"{row['Рентабельность_%']:.1f}%")
+        render_small_metric("Рентабельность", format_float(row['Рентабельность_%'], 1), "%")
     
     with cols[4]:
-        render_small_metric("Кол-во (шт)", f"{row['Количество']:,.0f}")
+        render_small_metric("Кол-во (шт)", format_number(row['Количество']))
 
-# Добавляем строку-итог
+# Итоговая строка
 st.markdown("---")
 total_cols = st.columns([1.5, 1, 1, 1, 1])
 with total_cols[0]:
     st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
 with total_cols[1]:
-    st.markdown(f"<div style='font-size: 16px;'><b>{year_revenue:,.0f} ₽</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
 with total_cols[2]:
-    st.markdown(f"<div style='font-size: 16px;'><b>{year_profit:,.0f} ₽</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
 with total_cols[3]:
-    st.markdown(f"<div style='font-size: 16px;'><b>{year_margin:.1f}%</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
 with total_cols[4]:
-    st.markdown(f"<div style='font-size: 16px;'><b>{year_quantity:,.0f}</b></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
 
 st.divider()
+
 # ==========================================
-# 7. НОВЫЙ БЛОК: АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ
+# 7. АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ
 # ==========================================
-st.divider()
 st.subheader(f"🏆 АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
 
-# ОЧИЩАЕМ ДАННЫЕ: убираем строки с 'Итого' и преобразуем номера месяцев в числа
+# Очищаем данные
 df_year_clean = df_year[df_year['Период.Месяц'] != 'Итого'].copy()
 df_year_clean['Период.Месяц'] = pd.to_numeric(df_year_clean['Период.Месяц'], errors='coerce')
-
-# Убираем строки, где месяц не определился
 df_year_clean = df_year_clean.dropna(subset=['Период.Месяц'])
 
 # Словарь для преобразования номера месяца в название
@@ -211,52 +226,44 @@ month_names = {
     9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
 }
 
-# Добавляем название месяца
 df_year_clean['Название_месяца'] = df_year_clean['Период.Месяц'].map(month_names)
 
 # Рассчитываем выручку по контрагентам за год
 customer_revenue = df_year_clean.groupby('Контрагент')['Выручка'].sum().reset_index()
 customer_revenue = customer_revenue.sort_values('Выручка', ascending=False)
 
-# Определяем топ-5 контрагентов
+# Топ-5 контрагентов
 top5_customers = customer_revenue.head(5)['Контрагент'].tolist()
 
-# Создаём помесячную выручку для всех контрагентов
+# Помесячная выручка
 monthly_customer_revenue = df_year_clean.groupby(['Контрагент', 'Период.Месяц', 'Название_месяца'])['Выручка'].sum().reset_index()
 
-# Сортируем месяцы в правильном порядке
 month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
                'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
 
-# Строим таблицу: топ-5 + "Остальные"
+# Строим таблицу
 table_data = []
 
-# Добавляем топ-5 контрагентов
 for customer in top5_customers:
     row = {'Контрагент': customer}
-    
-    # Годовая выручка
     yearly = customer_revenue[customer_revenue['Контрагент'] == customer]['Выручка'].values[0]
     row['Выручка за год'] = yearly
     
-    # Помесячная выручка
     for month in month_order:
         month_value = monthly_customer_revenue[
             (monthly_customer_revenue['Контрагент'] == customer) & 
             (monthly_customer_revenue['Название_месяца'] == month)
         ]['Выручка'].sum()
         row[month] = month_value
-    
     table_data.append(row)
 
-# Добавляем строку "Остальные"
+# Остальные
 other_customers = customer_revenue[~customer_revenue['Контрагент'].isin(top5_customers)]
 other_yearly = other_customers['Выручка'].sum()
 
 row_other = {'Контрагент': '📦 ОСТАЛЬНЫЕ (все прочие контрагенты)'}
 row_other['Выручка за год'] = other_yearly
 
-# Помесячная выручка для остальных
 for month in month_order:
     month_value = monthly_customer_revenue[
         (~monthly_customer_revenue['Контрагент'].isin(top5_customers)) & 
@@ -266,10 +273,9 @@ for month in month_order:
 
 table_data.append(row_other)
 
-# Создаём DataFrame для отображения
 df_top5_table = pd.DataFrame(table_data)
 
-# Отображаем таблицу
+# Отображаем таблицу с форматированием через column_config
 st.dataframe(
     df_top5_table,
     use_container_width=True,
@@ -292,24 +298,19 @@ st.dataframe(
     }
 )
 
-# Добавляем информационную строку с итогами
+# Итоговая статистика
 total_top5 = customer_revenue[customer_revenue['Контрагент'].isin(top5_customers)]['Выручка'].sum()
 total_all = year_revenue
 total_others = total_all - total_top5
 
-st.caption(f"📊 Из {total_all:,.0f} ₽ общей выручки за {selected_year} год:")
-st.caption(f"   • Топ-5 контрагентов: {total_top5:,.0f} ₽ ({total_top5/total_all*100:.1f}%)")
-st.caption(f"   • Остальные контрагенты: {total_others:,.0f} ₽ ({total_others/total_all*100:.1f}%)")
-
-# Отладочная информация (можно удалить после проверки)
-with st.expander("🔧 Техническая информация (для проверки)"):
-    st.write("Топ-5 контрагентов:", top5_customers)
-    st.write("Пример monthly_customer_revenue:")
-    st.dataframe(monthly_customer_revenue.head(10))
+st.caption(f"📊 Из {format_number(total_all)} ₽ общей выручки за {selected_year} год:")
+st.caption(f"   • Топ-5 контрагентов: {format_number(total_top5)} ₽ ({format_float(total_top5/total_all*100, 1)}%)")
+st.caption(f"   • Остальные контрагенты: {format_number(total_others)} ₽ ({format_float(total_others/total_all*100, 1)}%)")
 
 st.divider()
+
 # ==========================================
-# 7. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
+# 8. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
 # ==========================================
 st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month}")
 
@@ -317,29 +318,28 @@ col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     total_revenue = df_filtered['Выручка'].sum()
-    st.metric("💰 Выручка", f"{total_revenue:,.0f} ₽")
+    st.metric("💰 Выручка", f"{format_number(total_revenue)} ₽")
 
 with col2:
     total_profit = df_filtered['Валовая_прибыль'].sum()
-    st.metric("📈 Валовая прибыль", f"{total_profit:,.0f} ₽")
+    st.metric("📈 Валовая прибыль", f"{format_number(total_profit)} ₽")
 
 with col3:
     margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
-    st.metric("🎯 Рентабельность", f"{margin:.1f}%")
+    st.metric("🎯 Рентабельность", f"{format_float(margin, 1)}%")
 
 with col4:
     total_quantity = df_filtered['Количество'].sum()
-    st.metric("📦 Продано (шт)", f"{total_quantity:,.0f}")
+    st.metric("📦 Продано (шт)", f"{format_number(total_quantity)}")
 
 # ==========================================
-# 8. ГРАФИКИ
+# 9. ГРАФИКИ
 # ==========================================
 
 # Два графика в ряд
 col_left, col_right = st.columns(2)
 
 with col_left:
-    # Топ-10 контрагентов
     top_customers = df_filtered.groupby('Контрагент')['Выручка'].sum().nlargest(10).reset_index()
     if not top_customers.empty:
         fig1 = px.bar(top_customers, x='Выручка', y='Контрагент', orientation='h',
@@ -347,12 +347,13 @@ with col_left:
                       color='Выручка', color_continuous_scale='Blues',
                       labels={'Выручка': 'Выручка (₽)', 'Контрагент': ''})
         fig1.update_layout(height=500)
+        # Форматирование чисел на графике
+        fig1.update_xaxis(tickformat=',.0f')
         st.plotly_chart(fig1, use_container_width=True)
     else:
         st.info("Нет данных для отображения")
 
 with col_right:
-    # Сравнение выручки и прибыли по контрагентам
     compare = df_filtered.groupby('Контрагент')[['Выручка', 'Валовая_прибыль']].sum().nlargest(10, 'Выручка').reset_index()
     if not compare.empty:
         fig2 = go.Figure()
@@ -370,7 +371,7 @@ with col_right:
     else:
         st.info("Нет данных для отображения")
 
-# Третий график на всю ширину
+# Третий график
 st.subheader("📈 Динамика рентабельности по месяцам")
 margin_by_month = df_year[df_year['Контрагент'].isin(selected_customers)].groupby('Месяц')['Рентабельность_%'].mean().reset_index()
 if not margin_by_month.empty:
@@ -384,17 +385,24 @@ else:
     st.info("Нет данных для отображения динамики")
 
 # ==========================================
-# 9. ТАБЛИЦА С ДАННЫМИ
+# 10. ТАБЛИЦА С ДАННЫМИ
 # ==========================================
 st.subheader("📋 Детальные данные по продажам")
 display_cols = ['Дата', 'Контрагент', 'Номенклатура', 'Выручка', 'Валовая_прибыль', 'Рентабельность_%', 'Количество']
 display_cols = [col for col in display_cols if col in df_filtered.columns]
 
 if not df_filtered.empty:
-    st.dataframe(df_filtered[display_cols].head(100), use_container_width=True)
+    # Форматируем копию таблицы для отображения
+    df_display = df_filtered[display_cols].copy()
+    df_display['Выручка'] = df_display['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
+    df_display['Валовая_прибыль'] = df_display['Валовая_прибыль'].apply(lambda x: f"{format_number(x)} ₽")
+    df_display['Рентабельность_%'] = df_display['Рентабельность_%'].apply(lambda x: f"{format_float(x, 1)}%")
+    df_display['Количество'] = df_display['Количество'].apply(format_number)
+    
+    st.dataframe(df_display.head(100), use_container_width=True)
     
     # Кнопка скачивания
-    csv = df_filtered[display_cols].to_csv(index=False).encode('utf-8')
+    csv = df_filtered[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
     st.download_button(
         label="📥 Скачать данные (CSV)",
         data=csv,
@@ -405,7 +413,7 @@ else:
     st.warning("Нет данных для отображения. Попробуйте изменить фильтры.")
 
 # ==========================================
-# 10. ИТОГОВАЯ СТАТИСТИКА
+# 11. ИТОГОВАЯ СТАТИСТИКА
 # ==========================================
 st.divider()
-st.caption(f"📅 Данные за {selected_month} {selected_year} | Всего записей: {len(df_filtered)} | Обновлено: автоматически при запуске")
+st.caption(f"📅 Данные за {selected_month} {selected_year} | Всего записей: {format_number(len(df_filtered))} | Обновлено: автоматически при запуске")
