@@ -195,7 +195,288 @@ with total_cols[3]:
 with total_cols[4]:
     st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
 
+
+# ==========================================
+# 7. АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ
+# ==========================================
+st.subheader(f"🏆 АНАЛИЗ ВЫРУЧКИ ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
+
+# Очищаем данные
+df_year_clean = df_year[df_year['Период.Месяц'] != 'Итого'].copy()
+df_year_clean['Период.Месяц'] = pd.to_numeric(df_year_clean['Период.Месяц'], errors='coerce')
+df_year_clean = df_year_clean.dropna(subset=['Период.Месяц'])
+
+# Словарь для преобразования номера месяца в название
+month_names = {
+    1: 'Январь', 2: 'Февраль', 3: 'Март', 4: 'Апрель',
+    5: 'Май', 6: 'Июнь', 7: 'Июль', 8: 'Август',
+    9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
+}
+
+df_year_clean['Название_месяца'] = df_year_clean['Период.Месяц'].map(month_names)
+
+# Рассчитываем выручку по контрагентам за год
+customer_revenue = df_year_clean.groupby('Контрагент')['Выручка'].sum().reset_index()
+customer_revenue = customer_revenue.sort_values('Выручка', ascending=False)
+
+# Топ-5 контрагентов
+top5_customers = customer_revenue.head(5)['Контрагент'].tolist()
+
+# Помесячная выручка
+monthly_customer_revenue = df_year_clean.groupby(['Контрагент', 'Период.Месяц', 'Название_месяца'])['Выручка'].sum().reset_index()
+
+month_order = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 
+               'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+
+# Строим таблицу
+table_data = []
+
+for customer in top5_customers:
+    row = {'Контрагент': customer}
+    yearly = customer_revenue[customer_revenue['Контрагент'] == customer]['Выручка'].values[0]
+    row['Выручка за год'] = yearly
+    
+    for month in month_order:
+        month_value = monthly_customer_revenue[
+            (monthly_customer_revenue['Контрагент'] == customer) & 
+            (monthly_customer_revenue['Название_месяца'] == month)
+        ]['Выручка'].sum()
+        row[month] = month_value
+    table_data.append(row)
+
+# Остальные
+other_customers = customer_revenue[~customer_revenue['Контрагент'].isin(top5_customers)]
+other_yearly = other_customers['Выручка'].sum()
+
+row_other = {'Контрагент': '📦 ОСТАЛЬНЫЕ (все прочие контрагенты)'}
+row_other['Выручка за год'] = other_yearly
+
+for month in month_order:
+    month_value = monthly_customer_revenue[
+        (~monthly_customer_revenue['Контрагент'].isin(top5_customers)) & 
+        (monthly_customer_revenue['Название_месяца'] == month)
+    ]['Выручка'].sum()
+    row_other[month] = month_value
+
+table_data.append(row_other)
+
+df_top5_table = pd.DataFrame(table_data)
+
+# Форматируем числа с пробелами для отображения в HTML
+def format_with_spaces(x):
+    if pd.isna(x):
+        return "0"
+    try:
+        return f"{int(x):,}".replace(",", " ")
+    except (ValueError, TypeError):
+        return str(x)
+
+# Создаём HTML-таблицу для кастомного отображения
+html_table = """
+<style>
+.top5-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'Segoe UI', Arial, sans-serif;
+}
+.top5-table th {
+    background-color: #2E86AB;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    font-weight: bold;
+    position: sticky;
+    top: 0;
+}
+.top5-table td {
+    padding: 8px;
+    text-align: right;
+    border-bottom: 1px solid #e0e0e0;
+}
+.top5-table td:first-child {
+    text-align: left;
+    font-weight: bold;
+    background-color: #f8f9fa;
+}
+.top5-table tr:last-child td:first-child {
+    background-color: #e8f0fe;
+}
+.top5-table td:last-child {
+    text-align: right;
+}
+.top5-table tr:last-child td {
+    font-weight: bold;
+    background-color: #f0f2f6;
+}
+.month-cell {
+    font-size: 12px;
+}
+.year-cell {
+    font-weight: bold;
+}
+</style>
+
+<table class="top5-table">
+    <thead>
+        <tr>
+            <th>Контрагент / Покупатель</th>
+            <th>💰 Выручка за год</th>
+"""
+
+# Добавляем заголовки месяцев
+for month in month_order:
+    short_name = month[:3]  # Янв, Фев, Мар и т.д.
+    html_table += f"<th>{short_name}</th>"
+
+html_table += """
+        </tr>
+    </thead>
+    <tbody>
+"""
+
+# Добавляем строки с данными
+for idx, row in df_top5_table.iterrows():
+    html_table += "<tr>"
+    
+    # Контрагент
+    html_table += f"<td style='font-weight: bold;'>{row['Контрагент']}</td>"
+    
+    # Выручка за год (жирный шрифт)
+    html_table += f"<td style='font-weight: bold;'>{format_with_spaces(row['Выручка за год'])} ₽</td>"
+    
+    # Месяцы (уменьшенный шрифт 12px)
+    for month in month_order:
+        value = row[month]
+        html_table += f"<td class='month-cell'>{format_with_spaces(value)} ₽</td>"
+    
+    html_table += "</tr>"
+
+html_table += """
+    </tbody>
+</table>
+"""
+
+# Отображаем HTML-таблицу
+st.markdown(html_table, unsafe_allow_html=True)
+
+# Итоговая статистика
+total_top5 = customer_revenue[customer_revenue['Контрагент'].isin(top5_customers)]['Выручка'].sum()
+total_all = year_revenue
+total_others = total_all - total_top5
+
+st.caption(f"📊 Из {format_number(total_all)} ₽ общей выручки за {selected_year} год:")
+st.caption(f"   • Топ-5 контрагентов: {format_number(total_top5)} ₽ ({format_float(total_top5/total_all*100, 1)}%)")
+st.caption(f"   • Остальные контрагенты: {format_number(total_others)} ₽ ({format_float(total_others/total_all*100, 1)}%)")
+
 st.divider()
 
-# Остальные блоки (7-11) остаются без изменений...
-# (продолжение следует, так как сообщение слишком длинное)
+# ==========================================
+# 8. ОСНОВНЫЕ МЕТРИКИ (за выбранный месяц)
+# ==========================================
+st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month}")
+
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    total_revenue = df_filtered['Выручка'].sum()
+    st.metric("💰 Выручка", f"{format_number(total_revenue)} ₽")
+
+with col2:
+    total_profit = df_filtered['Валовая_прибыль'].sum()
+    st.metric("📈 Валовая прибыль", f"{format_number(total_profit)} ₽")
+
+with col3:
+    margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
+    st.metric("🎯 Рентабельность", f"{format_float(margin, 1)}%")
+
+with col4:
+    total_quantity = df_filtered['Количество'].sum()
+    st.metric("📦 Продано (шт)", f"{format_number(total_quantity)}")
+
+# ==========================================
+# 9. ГРАФИКИ
+# ==========================================
+
+# Два графика в ряд
+col_left, col_right = st.columns(2)
+
+with col_left:
+    top_customers_chart = df_filtered.groupby('Контрагент')['Выручка'].sum().nlargest(10).reset_index()
+    if not top_customers_chart.empty:
+        fig1 = px.bar(top_customers_chart, x='Выручка', y='Контрагент', orientation='h',
+                      title='Топ-10 контрагентов по выручке',
+                      color='Выручка', color_continuous_scale='Blues',
+                      labels={'Выручка': 'Выручка (₽)', 'Контрагент': ''})
+        fig1.update_layout(height=500)
+        st.plotly_chart(fig1, use_container_width=True)
+    else:
+        st.info("Нет данных для отображения")
+
+with col_right:
+    compare = df_filtered.groupby('Контрагент')[['Выручка', 'Валовая_прибыль']].sum().nlargest(10, 'Выручка').reset_index()
+    if not compare.empty:
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(name='Выручка', x=compare['Контрагент'], y=compare['Выручка'], 
+                              marker_color='#2E86AB', text=compare['Выручка'].apply(lambda x: f'{x:,.0f}'),
+                              textposition='outside'))
+        fig2.add_trace(go.Bar(name='Валовая прибыль', x=compare['Контрагент'], y=compare['Валовая_прибыль'], 
+                              marker_color='#52B788', text=compare['Валовая_прибыль'].apply(lambda x: f'{x:,.0f}'),
+                              textposition='outside'))
+        fig2.update_layout(title='Сравнение выручки и прибыли',
+                           barmode='group',
+                           xaxis_tickangle=-45,
+                           height=500)
+        st.plotly_chart(fig2, use_container_width=True)
+    else:
+        st.info("Нет данных для отображения")
+
+# Третий график
+st.subheader("📈 Динамика рентабельности по месяцам")
+margin_by_month = df_year[df_year['Контрагент'].isin(selected_customers)].groupby('Месяц')['Рентабельность_%'].mean().reset_index()
+if not margin_by_month.empty:
+    fig3 = px.line(margin_by_month, x='Месяц', y='Рентабельность_%', 
+                   markers=True, line_shape='linear',
+                   title=f'Средняя рентабельность выбранных контрагентов за {selected_year} год',
+                   labels={'Рентабельность_%': 'Рентабельность (%)', 'Месяц': ''})
+    fig3.update_layout(hovermode='x unified', height=450)
+    st.plotly_chart(fig3, use_container_width=True)
+else:
+    st.info("Нет данных для отображения динамики")
+
+# ==========================================
+# 10. ТАБЛИЦА С ДАННЫМИ
+# ==========================================
+st.subheader("📋 Детальные данные по продажам")
+display_cols = ['Дата', 'Контрагент', 'Номенклатура', 'Выручка', 'Валовая_прибыль', 'Рентабельность_%', 'Количество']
+display_cols = [col for col in display_cols if col in df_filtered.columns]
+
+if not df_filtered.empty:
+    # Форматируем копию таблицы для отображения
+    df_display = df_filtered[display_cols].copy()
+    df_display['Выручка'] = df_display['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
+    df_display['Валовая_прибыль'] = df_display['Валовая_прибыль'].apply(lambda x: f"{format_number(x)} ₽")
+    df_display['Рентабельность_%'] = df_display['Рентабельность_%'].apply(lambda x: f"{format_float(x, 1)}%")
+    df_display['Количество'] = df_display['Количество'].apply(format_number)
+    
+    st.dataframe(df_display.head(100), use_container_width=True)
+    
+    # Кнопка скачивания
+    csv = df_filtered[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+    st.download_button(
+        label="📥 Скачать данные (CSV)",
+        data=csv,
+        file_name=f'sales_data_{selected_year}_{selected_month}.csv',
+        mime='text/csv',
+    )
+else:
+    st.warning("Нет данных для отображения. Попробуйте изменить фильтры.")
+
+# ==========================================
+# 11. ИТОГОВАЯ СТАТИСТИКА
+# ==========================================
+st.divider()
+st.caption(f"📅 Данные за {selected_month} {selected_year} | Всего записей: {format_number(len(df_filtered))} | Обновлено: автоматически при запуске")
+
+
+st.divider()
+
