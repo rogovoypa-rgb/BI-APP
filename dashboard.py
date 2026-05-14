@@ -133,9 +133,8 @@ if len(available_years) > 1 and selected_year > min(available_years):
             st.caption(f"📊 Изменение выручки vs {prev_year}: {format_float(change, 1)}%")
 
 st.divider()
-
 # ==========================================
-# 7. ПОМЕСЯЧНАЯ РАЗБИВКА
+# 7. ПОМЕСЯЧНАЯ РАЗБИВКА (ПРЕЖНИЙ СТИЛЬ)
 # ==========================================
 st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
 
@@ -148,21 +147,65 @@ monthly['Название'] = monthly['Период.Месяц'].map(month_names
 monthly['Рентабельность'] = (monthly['Валовая_прибыль'] / monthly['Выручка'] * 100).fillna(0)
 monthly = monthly.sort_values('Период.Месяц')
 
+# Функция для отображения уменьшенных метрик (как было раньше)
+def render_small_metric(label, value, suffix=""):
+    st.markdown(
+        f"""
+        <div style='
+            background-color: #F0F2F6;
+            border-radius: 10px;
+            padding: 10px;
+            text-align: center;
+        '>
+            <div style='
+                font-size: 14px;
+                color: #666;
+                margin-bottom: 5px;
+            '>{label}</div>
+            <div style='
+                font-size: 20px;
+                font-weight: bold;
+                color: #1f1f1f;
+            '>{value}{suffix}</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+# Отображаем таблицу с помесячными данными (как было раньше)
 for _, row in monthly.iterrows():
-    c = st.columns([1.5, 1, 1, 1, 1])
-    with c[0]:
-        st.markdown(f"**{row['Название']}**")
-    with c[1]:
-        st.metric("Выручка", f"{format_number(row['Выручка'])} ₽", label_visibility="collapsed")
-    with c[2]:
-        st.metric("Прибыль", f"{format_number(row['Валовая_прибыль'])} ₽", label_visibility="collapsed")
-    with c[3]:
-        st.metric("Рентабельность", f"{format_float(row['Рентабельность'], 1)}%", label_visibility="collapsed")
-    with c[4]:
-        st.metric("Кол-во", f"{format_number(row['Количество'])}", label_visibility="collapsed")
+    cols = st.columns([1.5, 1, 1, 1, 1])
+    
+    with cols[0]:
+        st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
+    
+    with cols[1]:
+        render_small_metric("Выручка", format_number(row['Выручка']), " ₽")
+    
+    with cols[2]:
+        render_small_metric("Прибыль", format_number(row['Валовая_прибыль']), " ₽")
+    
+    with cols[3]:
+        render_small_metric("Рентабельность", format_float(row['Рентабельность'], 1), "%")
+    
+    with cols[4]:
+        render_small_metric("Кол-во (шт)", format_number(row['Количество']))
+
+# Итоговая строка
+st.markdown("---")
+total_cols = st.columns([1.5, 1, 1, 1, 1])
+with total_cols[0]:
+    st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
+with total_cols[1]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
+with total_cols[2]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
+with total_cols[3]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+with total_cols[4]:
+    st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
 
 st.divider()
-
 # ==========================================
 # 8. АНАЛИЗ ТОП-5 КОНТРАГЕНТОВ
 # ==========================================
