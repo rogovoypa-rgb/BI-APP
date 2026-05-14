@@ -1,3 +1,12 @@
+# ВРЕМЕННАЯ ДИАГНОСТИКА (удалить потом)
+with st.expander("🔧 Диагностика данных (только для проверки)"):
+    st.write("Доступные годы:", sorted(df['Год'].unique()))
+    st.write("Доступные годы в df_year:", sorted(df_year['Год'].unique()))
+    st.write("Уникальные значения 'Период.Месяц':", df['Период.Месяц'].unique())
+    if not df_year.empty:
+        st.write("Уникальные 'Период.Месяц' в выбранном году:", df_year['Период.Месяц'].unique())
+        st.write("Пример записей за выбранный год:", df_year[['Год', 'Период.Месяц', 'Выручка']].head(10))
+        
 import streamlit as st
 import pandas as pd
 import plotly.express as px
