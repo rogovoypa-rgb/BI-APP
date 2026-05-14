@@ -55,7 +55,6 @@ def load_data():
         'Номенклатура': 'Номенклатура'
     })
     
-    # Преобразуем 'Период.Месяц' в число (строки типа 'Итого' станут NaN)
     df['Период.Месяц'] = pd.to_numeric(df['Период.Месяц'], errors='coerce')
     df = df.dropna(subset=['Период.Месяц'])
     df['Период.Месяц'] = df['Период.Месяц'].astype(int)
@@ -88,14 +87,12 @@ st.sidebar.header("🔍 Фильтры")
 selected_year = st.sidebar.selectbox("📅 Выберите год", available_years)
 df_year = df[df['Год'] == selected_year]
 
-# Доступные месяцы
 available_months_num = sorted(df_year['Период.Месяц'].unique())
 available_months_display = [month_names[m] for m in available_months_num]
 
 selected_month_display = st.sidebar.selectbox("Выберите месяц", available_months_display)
 selected_month_num = available_months_num[available_months_display.index(selected_month_display)]
 
-# Контрагенты
 all_customers = sorted(df_year['Контрагент'].dropna().unique())
 selected_customers = st.sidebar.multiselect(
     "Выберите контрагентов",
@@ -103,7 +100,6 @@ selected_customers = st.sidebar.multiselect(
     default=all_customers[:5] if len(all_customers) > 5 else all_customers
 )
 
-# Фильтрованные данные
 df_filtered = df_year[(df_year['Период.Месяц'] == selected_month_num) & (df_year['Контрагент'].isin(selected_customers))]
 
 # ==========================================
@@ -157,7 +153,7 @@ for _, row in monthly.iterrows():
     with c[0]:
         st.markdown(f"**{row['Название']}**")
     with c[1]:
-        st.metric("Выручка", f"{format_number(row['Выруčka'])} ₽", label_visibility="collapsed")
+        st.metric("Выручка", f"{format_number(row['Выручка'])} ₽", label_visibility="collapsed")
     with c[2]:
         st.metric("Прибыль", f"{format_number(row['Валовая_прибыль'])} ₽", label_visibility="collapsed")
     with c[3]:
@@ -172,15 +168,12 @@ st.divider()
 # ==========================================
 st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ЗА {selected_year}")
 
-# Агрегация
 cust_rev = df_year.groupby('Контрагент')['Выручка'].sum().reset_index()
 cust_rev = cust_rev.sort_values('Выручка', ascending=False)
 top5 = cust_rev.head(5)['Контрагент'].tolist()
 
-# Помесячная выручка по контрагентам
 monthly_cust = df_year.groupby(['Контрагент', 'Период.Месяц'])['Выручка'].sum().reset_index()
 
-# Формируем таблицу
 table_data = []
 for c in top5:
     row = {'Контрагент': c}
@@ -190,7 +183,6 @@ for c in top5:
         row[month_names[m]] = val
     table_data.append(row)
 
-# Остальные
 other_rev = cust_rev[~cust_rev['Контрагент'].isin(top5)]['Выручка'].sum()
 other_row = {'Контрагент': '📦 ОСТАЛЬНЫЕ'}
 other_row['Год'] = other_rev
@@ -201,7 +193,6 @@ table_data.append(other_row)
 
 df_top5 = pd.DataFrame(table_data)
 
-# Отображаем через HTML
 def fmt(x):
     return f"{int(x):,}".replace(",", " ") if x > 0 else "0"
 
