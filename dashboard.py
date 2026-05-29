@@ -315,7 +315,49 @@ elif page == "🚚 Логистика":
     st.title("🚚 Аналитика затрат на логистику")
     
     if logistics_df.empty:
-        st.warning("⚠️ Файл 'logistics_data.xlsx' не найден.")
+        st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
         st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
+        
+        # Диагностика: показываем, какие файлы есть в папке
+        import os
+        st.write("Файлы в текущей папке:")
+        for f in os.listdir('.'):
+            if f.endswith('.xlsx'):
+                st.write(f"  - {f}")
     else:
-        st.info("📊 Страница логистики в разработке. Скоро здесь появится аналитика.")
+        st.success(f"✅ Файл загружен. Размер: {logistics_df.shape[0]} строк, {logistics_df.shape[1]} столбцов")
+        
+        # Показываем структуру файла
+        with st.expander("📋 Структура файла (первые 10 строк)"):
+            st.dataframe(logistics_df.head(10))
+        
+        # Показываем общую статистику
+        st.divider()
+        st.subheader("📊 Общая статистика")
+        
+        # Ищем числовые столбцы
+        numeric_cols = logistics_df.select_dtypes(include=['number']).columns.tolist()
+        if numeric_cols:
+            st.write("Числовые столбцы:", numeric_cols)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                # Суммы по числовым столбцам
+                st.write("**Суммы по столбцам:**")
+                for col in numeric_cols:
+                    total = logistics_df[col].sum()
+                    st.write(f"- {col}: {format_number(total)}")
+        else:
+            st.warning("Числовые столбцы не найдены. Проверьте формат данных.")
+        
+        # Показываем уникальные значения в текстовых столбцах
+        st.divider()
+        st.subheader("📌 Категории в данных")
+        
+        text_cols = logistics_df.select_dtypes(include=['object']).columns.tolist()
+        for col in text_cols[:5]:  # показываем первые 5 текстовых столбцов
+            unique_vals = logistics_df[col].dropna().unique()
+            if len(unique_vals) < 20:  # только если значений немного
+                st.write(f"**{col}:** {', '.join(unique_vals[:10].astype(str))}")
+            else:
+                st.write(f"**{col}:** {len(unique_vals)} уникальных значений")
