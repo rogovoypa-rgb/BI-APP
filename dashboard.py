@@ -36,19 +36,24 @@ def format_float(value, decimals=1):
 def load_sales_data():
     df = pd.read_excel('sales_data.xlsx')
     
+    # Работа с датой (столбец 'Документ.Дата')
     df['Дата'] = pd.to_datetime(df['Документ.Дата'], dayfirst=True, errors='coerce')
     df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
     df['Год'] = df['Дата'].dt.year
     
+    # Расчёт прибыли и рентабельности
+    # ВАЖНО: Выручка берётся из столбца 'Сумма без НДС' (столбец R)
     df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость']
     df['Рентабельность_%'] = (df['Валовая_прибыль'] / df['Сумма без НДС'] * 100).fillna(0)
     
+    # Переименуем для удобства
     df = df.rename(columns={
-        'Сумма': 'Выручка',
+        'Сумма без НДС': 'Выручка',   # ← ВЫРУЧКА ИЗ СТОЛБЦА R
         'Контрагент': 'Контрагент',
         'Номенклатура': 'Номенклатура'
     })
     
+    # Обработка столбца 'Период.Месяц'
     df['Период.Месяц'] = pd.to_numeric(df['Период.Месяц'], errors='coerce')
     df = df.dropna(subset=['Период.Месяц'])
     df['Период.Месяц'] = df['Период.Месяц'].astype(int)
@@ -59,13 +64,9 @@ def load_sales_data():
 def load_logistics_data():
     try:
         df = pd.read_excel('logistics_data.xlsx')
-        df['Дата'] = pd.to_datetime(df['Дата'], dayfirst=True, errors='coerce')
-        df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
-        df['Год'] = df['Дата'].dt.year
-        df['Месяц_цифра'] = df['Дата'].dt.month
         return df
     except FileNotFoundError:
-        return pd.DataFrame()  # Пустой DataFrame, если файла нет
+        return pd.DataFrame()
 
 sales_df = load_sales_data()
 logistics_df = load_logistics_data()
@@ -84,7 +85,6 @@ month_names = {
 # ==========================================
 st.set_page_config(page_title="BI Портал", layout="wide")
 
-# Боковая панель с навигацией
 st.sidebar.title("📊 Навигация")
 page = st.sidebar.radio(
     "Выберите раздел",
@@ -92,7 +92,7 @@ page = st.sidebar.radio(
 )
 
 # ==========================================
-# СТРАНИЦА 1: ПРОДАЖИ (ваш существующий код)
+# СТРАНИЦА 1: ПРОДАЖИ
 # ==========================================
 if page == "📈 Продажи":
     st.title("📊 BI Портал аналитики продаж")
@@ -301,120 +301,7 @@ elif page == "🚚 Логистика":
     st.title("🚚 Аналитика затрат на логистику")
     
     if logistics_df.empty:
-        st.warning("⚠️ Файл 'logistics_data.xlsx' не найден. Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
-        st.info("📌 Ожидаемая структура файла: колонки 'Дата', 'Контрагент', 'Транспортная_компания', 'Услуга', 'Стоимость_без_НДС', 'НДС', 'Итого'")
+        st.warning("⚠️ Файл 'logistics_data.xlsx' не найден.")
+        st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
     else:
-        # Фильтры для логистики
-        available_years_log = sorted(logistics_df['Год'].dropna().unique())
-        selected_year_log = st.sidebar.selectbox("📅 Выберите год", available_years_log)
-        
-        df_year_log = logistics_df[logistics_df['Год'] == selected_year_log]
-        
-        available_months_log = sorted(df_year_log['Месяц_цифра'].dropna().unique())
-        available_months_display_log = [month_names[m] for m in available_months_log]
-        
-        selected_month_display_log = st.sidebar.selectbox("Выберите месяц", available_months_display_log)
-        selected_month_num_log = available_months_log[available_months_display_log.index(selected_month_display_log)]
-        
-        all_carriers = sorted(df_year_log['Транспортная_компания'].dropna().unique())
-        selected_carriers = st.sidebar.multiselect(
-            "🚛 Транспортные компании",
-            all_carriers,
-            default=all_carriers[:3] if len(all_carriers) > 3 else all_carriers
-        )
-        
-        df_filtered_log = df_year_log[
-            (df_year_log['Месяц_цифра'] == selected_month_num_log) & 
-            (df_year_log['Транспортная_компания'].isin(selected_carriers))
-        ]
-        
-        # Годовые метрики логистики
-        st.divider()
-        st.subheader(f"📦 ИТОГИ ЛОГИСТИКИ ЗА {selected_year_log} ГОД")
-        
-        year_cost = df_year_log['Итого'].sum()
-        year_cost_no_nds = df_year_log['Стоимость_без_НДС'].sum()
-        year_nds = df_year_log['НДС'].sum()
-        year_operations = len(df_year_log)
-        
-        c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            st.metric("💰 Общие затраты", f"{format_number(year_cost)} ₽")
-        with c2:
-            st.metric("📉 Без НДС", f"{format_number(year_cost_no_nds)} ₽")
-        with c3:
-            st.metric("🧾 НДС", f"{format_number(year_nds)} ₽")
-        with c4:
-            st.metric("📋 Кол-во операций", f"{format_number(year_operations)}")
-        
-        st.divider()
-        
-        # Помесячная разбивка логистики
-        st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log} ГОД")
-        
-        monthly_log = df_year_log.groupby('Месяц_цифра').agg({
-            'Итого': 'sum',
-            'Стоимость_без_НДС': 'sum',
-            'НДС': 'sum'
-        }).reset_index()
-        monthly_log['Название'] = monthly_log['Месяц_цифра'].map(month_names)
-        monthly_log = monthly_log.sort_values('Месяц_цифра')
-        
-        for _, row in monthly_log.iterrows():
-            cols = st.columns([1.5, 1, 1, 1])
-            with cols[0]:
-                st.markdown(f"**{row['Название']}**")
-            with cols[1]:
-                st.metric("Итого", f"{format_number(row['Итого'])} ₽", label_visibility="collapsed")
-            with cols[2]:
-                st.metric("Без НДС", f"{format_number(row['Стоимость_без_НДС'])} ₽", label_visibility="collapsed")
-            with cols[3]:
-                st.metric("НДС", f"{format_number(row['НДС'])} ₽", label_visibility="collapsed")
-        
-        st.divider()
-        
-        # Графики по логистике
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Топ транспортных компаний по затратам
-            top_carriers = df_year_log.groupby('Транспортная_компания')['Итого'].sum().nlargest(10).reset_index()
-            if not top_carriers.empty:
-                fig = px.bar(top_carriers, x='Итого', y='Транспортная_компания', orientation='h',
-                             title='Топ транспортных компаний по затратам',
-                             color='Итого', color_continuous_scale='Reds')
-                st.plotly_chart(fig, use_container_width=True)
-        
-        with col2:
-            # Динамика затрат по месяцам
-            if not monthly_log.empty:
-                fig2 = px.line(monthly_log, x='Название', y='Итого', 
-                               markers=True, title='Динамика затрат на логистику по месяцам')
-                st.plotly_chart(fig2, use_container_width=True)
-        
-        # Детали за выбранный месяц
-        st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display_log} {selected_year_log}")
-        
-        mm1, mm2, mm3, mm4 = st.columns(4)
-        with mm1:
-            st.metric("💰 Затраты", f"{format_number(df_filtered_log['Итого'].sum())} ₽")
-        with mm2:
-            st.metric("📊 Без НДС", f"{format_number(df_filtered_log['Стоимость_без_НДС'].sum())} ₽")
-        with mm3:
-            st.metric("🧾 НДС", f"{format_number(df_filtered_log['НДС'].sum())} ₽")
-        with mm4:
-            st.metric("📋 Операций", f"{len(df_filtered_log)}")
-        
-        # Таблица данных по логистике
-        st.subheader("📋 Детальные данные по логистике")
-        show_cols_log = ['Дата', 'Контрагент', 'Транспортная_компания', 'Услуга', 'Стоимость_без_НДС', 'НДС', 'Итого']
-        show_cols_log = [c for c in show_cols_log if c in df_filtered_log.columns]
-        
-        if not df_filtered_log.empty:
-            st.dataframe(df_filtered_log[show_cols_log].head(100), use_container_width=True)
-            csv_log = df_filtered_log[show_cols_log].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-            st.download_button("📥 Скачать CSV (логистика)", csv_log, f"logistics_{selected_year_log}_{selected_month_num_log}.csv", "text/csv")
-        else:
-            st.warning("Нет данных за выбранный период")
-        
-        st.caption(f"📅 {selected_month_display_log} {selected_year_log} | Записей: {len(df_filtered_log)}")
+        st.info("📊 Страница логистики в разработке. Скоро здесь появится аналитика.")
