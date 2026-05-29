@@ -317,47 +317,206 @@ elif page == "🚚 Логистика":
     if logistics_df.empty:
         st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
         st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
-        
-        # Диагностика: показываем, какие файлы есть в папке
-        import os
-        st.write("Файлы в текущей папке:")
-        for f in os.listdir('.'):
-            if f.endswith('.xlsx'):
-                st.write(f"  - {f}")
     else:
-        st.success(f"✅ Файл загружен. Размер: {logistics_df.shape[0]} строк, {logistics_df.shape[1]} столбцов")
+        # ==========================================
+        # ПОДГОТОВКА ДАННЫХ
+        # ==========================================
+        df_log = logistics_df.copy()
         
-        # Показываем структуру файла
-        with st.expander("📋 Структура файла (первые 10 строк)"):
-            st.dataframe(logistics_df.head(10))
+        # Фильтруем строки с флагом 1 (берём только нужные для анализа)
+        if 'Строка содержит данные' in df_log.columns:
+            df_log = df_log[df_log['Строка содержит данные'] == 1]
         
-        # Показываем общую статистику
+        # Преобразуем даты
+        if 'Дата заказа' in df_log.columns:
+            df_log['Дата'] = pd.to_datetime(df_log['Дата заказа'], errors='coerce')
+        elif 'Дата отгрузки' in df_log.columns:
+            df_log['Дата'] = pd.to_datetime(df_log['Дата отгрузки'], errors='coerce')
+        
+        df_log['Год'] = df_log['Дата'].dt.year
+        df_log['Месяц'] = df_log['Дата'].dt.month
+        df_log['Месяц_название'] = df_log['Месяц'].map(month_names)
+        
+        # Основные колонки для анализа
+        df_log['План'] = pd.to_numeric(df_log['Плановая цена PLM'], errors='coerce')
+        df_log['Факт'] = pd.to_numeric(df_log['Фактическая цена PLM'], errors='coerce')
+        df_log['Доставка_до_PLM'] = pd.to_numeric(df_log['Доставка до PLM'], errors='coerce')
+        df_log['Кол_во_паллет'] = pd.to_numeric(df_log['Кол-во паллет'], errors='coerce')
+        df_log['Отклонение'] = df_log['Факт'] - df_log['План']
+        
+        # ==========================================
+        # ФИЛЬТРЫ
+        # ==========================================
+        st.sidebar.header("🚚 Фильтры логистики")
+        
+        available_years = sorted(df_log['Год'].dropna().unique())
+        selected_year_log = st.sidebar.selectbox("📅 Выберите год", available_years, key="log_year")
+        
+        df_year_log = df_log[df_log['Год'] == selected_year_log]
+        
+        available_months = sorted(df_year_log['Месяц'].dropna().unique())
+        available_months_display = [month_names[m] for m in available_months]
+        selected_month_display = st.sidebar.selectbox("Выберите месяц", available_months_display, key="log_month")
+        selected_month_num = available_months[available_months_display.index(selected_month_display)]
+        
+        # Города
+        all_cities = sorted(df_year_log['Город'].dropna().unique())
+        selected_cities = st.sidebar.multiselect(
+            "🏙️ Города",
+            all_cities,
+            default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+            key="log_cities"
+        )
+        
+        # Фильтруем данные
+        df_filtered_log = df_year_log[
+            (df_year_log['Месяц'] == selected_month_num) &
+            (df_year_log['Город'].isin(selected_cities))
+        ]
+        
+        # ==========================================
+        # ГОДОВЫЕ МЕТРИКИ
+        # ==========================================
         st.divider()
-        st.subheader("📊 Общая статистика")
+        st.subheader(f"📦 ИТОГИ ЛОГИСТИКИ ЗА {selected_year_log} ГОД")
         
-        # Ищем числовые столбцы
-        numeric_cols = logistics_df.select_dtypes(include=['number']).columns.tolist()
-        if numeric_cols:
-            st.write("Числовые столбцы:", numeric_cols)
+        year_plan = df_year_log['План'].sum()
+        year_fact = df_year_log['Факт'].sum()
+        year_deviation = year_fact - year_plan
+        year_deviation_pct = (year_deviation / year_plan * 100) if year_plan > 0 else 0
+        year_delivery = df_year_log['Доставка_до_PLM'].sum()
+        year_orders = len(df_year_log)
+        year_pallets = df_year_log['Кол_во_паллет'].sum()
+        
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            st.metric("💰 Фактические затраты", f"{format_number(year_fact)} ₽")
+        with c2:
+            st.metric("📋 Плановые затраты", f"{format_number(year_plan)} ₽")
+        with c3:
+            st.metric("📊 Отклонение", f"{format_number(year_deviation)} ₽", 
+                     delta=f"{format_float(year_deviation_pct, 1)}%")
+        with c4:
+            st.metric("📦 Кол-во паллет", f"{format_number(year_pallets)}")
+        
+        # Вторая строка метрик
+        c5, c6, c7, c8 = st.columns(4)
+        with c5:
+            st.metric("🚛 Доставка до PLM", f"{format_number(year_delivery)} ₽")
+        with c6:
+            st.metric("📋 Кол-во заказов", f"{format_number(year_orders)}")
+        with c7:
+            avg_cost = year_fact / year_orders if year_orders > 0 else 0
+            st.metric("💰 Средняя цена заказа", f"{format_number(avg_cost)} ₽")
+        with c8:
+            avg_pallet = year_fact / year_pallets if year_pallets > 0 else 0
+            st.metric("📦 Средняя цена паллеты", f"{format_number(avg_pallet)} ₽")
+        
+        st.divider()
+        
+        # ==========================================
+        # ПОМЕСЯЧНАЯ РАЗБИВКА
+        # ==========================================
+        st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log} ГОД")
+        
+        monthly = df_year_log.groupby('Месяц').agg({
+            'План': 'sum',
+            'Факт': 'sum',
+            'Доставка_до_PLM': 'sum',
+            'Кол_во_паллет': 'sum'
+        }).reset_index()
+        monthly['Название'] = monthly['Месяц'].map(month_names)
+        monthly['Отклонение'] = monthly['Факт'] - monthly['План']
+        monthly = monthly.sort_values('Месяц')
+        
+        for _, row in monthly.iterrows():
+            cols = st.columns([1.5, 1, 1, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"**{row['Название']}**")
+            with cols[1]:
+                st.metric("План", f"{format_number(row['План'])} ₽", label_visibility="collapsed")
+            with cols[2]:
+                st.metric("Факт", f"{format_number(row['Факт'])} ₽", label_visibility="collapsed")
+            with cols[3]:
+                dev_color = "🟢" if row['Отклонение'] <= 0 else "🔴"
+                st.metric("Отклонение", f"{dev_color} {format_number(row['Отклонение'])} ₽", label_visibility="collapsed")
+            with cols[4]:
+                st.metric("Доставка до PLM", f"{format_number(row['Доставка_до_PLM'])} ₽", label_visibility="collapsed")
+            with cols[5]:
+                st.metric("Паллет", format_number(row['Кол_во_паллет']), label_visibility="collapsed")
+        
+        st.divider()
+        
+        # ==========================================
+        # ГРАФИКИ
+        # ==========================================
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Топ городов по затратам
+            city_costs = df_year_log.groupby('Город')['Факт'].sum().nlargest(10).reset_index()
+            if not city_costs.empty:
+                fig = px.bar(city_costs, x='Факт', y='Город', orientation='h',
+                             title='Топ городов по фактическим затратам',
+                             color='Факт', color_continuous_scale='Reds',
+                             labels={'Факт': 'Затраты (₽)', 'Город': ''})
+                st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            # Динамика план vs факт по месяцам
+            if not monthly.empty:
+                fig2 = go.Figure()
+                fig2.add_trace(go.Scatter(x=monthly['Название'], y=monthly['План'], 
+                                          mode='lines+markers', name='План', line=dict(color='blue')))
+                fig2.add_trace(go.Scatter(x=monthly['Название'], y=monthly['Факт'], 
+                                          mode='lines+markers', name='Факт', line=dict(color='red')))
+                fig2.update_layout(title='Динамика план vs факт по месяцам',
+                                   xaxis_title='Месяц', yaxis_title='Затраты (₽)')
+                st.plotly_chart(fig2, use_container_width=True)
+        
+        # Третий график
+        st.subheader("📊 Отклонение факта от плана по месяцам")
+        if not monthly.empty:
+            fig3 = px.bar(monthly, x='Название', y='Отклонение',
+                          title='Отклонение (Факт - План)',
+                          color='Отклонение', color_continuous_scale='RdYlGn',
+                          labels={'Отклонение': 'Отклонение (₽)', 'Название': 'Месяц'})
+            st.plotly_chart(fig3, use_container_width=True)
+        
+        # ==========================================
+        # ДЕТАЛИ ЗА ВЫБРАННЫЙ МЕСЯЦ
+        # ==========================================
+        st.divider()
+        st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display} {selected_year_log}")
+        
+        d1, d2, d3, d4 = st.columns(4)
+        with d1:
+            st.metric("💰 Факт", f"{format_number(df_filtered_log['Факт'].sum())} ₽")
+        with d2:
+            st.metric("📋 План", f"{format_number(df_filtered_log['План'].sum())} ₽")
+        with d3:
+            dev = df_filtered_log['Факт'].sum() - df_filtered_log['План'].sum()
+            st.metric("📊 Отклонение", f"{format_number(dev)} ₽")
+        with d4:
+            st.metric("📦 Паллет", f"{format_number(df_filtered_log['Кол_во_паллет'].sum())}")
+        
+        # Таблица с детальными данными
+        st.subheader("📋 Детальные данные по логистике")
+        display_cols = ['Дата заказа', 'Город', 'Плановая цена PLM', 'Фактическая цена PLM', 
+                        'Доставка до PLM', 'Кол-во паллет', 'Категория', 'Номенклатура']
+        display_cols = [c for c in display_cols if c in df_filtered_log.columns]
+        
+        if not df_filtered_log.empty and display_cols:
+            df_display = df_filtered_log[display_cols].copy()
+            for col in ['Плановая цена PLM', 'Фактическая цена PLM', 'Доставка до PLM']:
+                if col in df_display.columns:
+                    df_display[col] = df_display[col].apply(lambda x: f"{format_number(x)} ₽" if pd.notna(x) else "0 ₽")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                # Суммы по числовым столбцам
-                st.write("**Суммы по столбцам:**")
-                for col in numeric_cols:
-                    total = logistics_df[col].sum()
-                    st.write(f"- {col}: {format_number(total)}")
+            st.dataframe(df_display.head(100), use_container_width=True)
+            
+            csv_log = df_filtered_log[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+            st.download_button("📥 Скачать CSV (логистика)", csv_log, f"logistics_{selected_year_log}_{selected_month_num}.csv", "text/csv")
         else:
-            st.warning("Числовые столбцы не найдены. Проверьте формат данных.")
+            st.warning("Нет данных за выбранный период")
         
-        # Показываем уникальные значения в текстовых столбцах
-        st.divider()
-        st.subheader("📌 Категории в данных")
-        
-        text_cols = logistics_df.select_dtypes(include=['object']).columns.tolist()
-        for col in text_cols[:5]:  # показываем первые 5 текстовых столбцов
-            unique_vals = logistics_df[col].dropna().unique()
-            if len(unique_vals) < 20:  # только если значений немного
-                st.write(f"**{col}:** {', '.join(unique_vals[:10].astype(str))}")
-            else:
-                st.write(f"**{col}:** {len(unique_vals)} уникальных значений")
+        st.caption(f"📅 {selected_month_display} {selected_year_log} | Записей: {len(df_filtered_log)}")
