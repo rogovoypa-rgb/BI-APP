@@ -51,7 +51,7 @@ def load_sales_data():
     # Переименуем для удобства
     df = df.rename(columns={
         'Сумма без НДС': 'Выручка_без_НДС',
-        'Себестоимость без НДС': 'Себестоимость',   # ← себестоимость без НДС
+        'Себестоимость без НДС': 'Себестоимость',
         'Контрагент': 'Контрагент',
         'Номенклатура': 'Номенклатура'
     })
@@ -66,9 +66,28 @@ def load_sales_data():
 @st.cache_data
 def load_logistics_data():
     try:
-        df = pd.read_excel('logistics_data.xlsx')
+        # Читаем файл с заголовками в первой строке
+        df = pd.read_excel('logistics_data.xlsx', header=0)
+        
+        if df is None or len(df) == 0:
+            return pd.DataFrame()
+        
+        # Фильтруем строки с флагом 1 (только нужные для анализа)
+        if 'Строка содержит данные' in df.columns:
+            df = df[df['Строка содержит данные'] == 1]
+        
+        # Преобразуем числовые колонки
+        numeric_cols = ['Плановая цена PLM', 'Фактическая цена PLM', 'Доставка до PLM', 
+                        'Стоимость доставки 1 паллета', 'Кол-во паллет']
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        
         return df
     except FileNotFoundError:
+        return pd.DataFrame()
+    except Exception as e:
+        st.warning(f"Ошибка загрузки логистики: {e}")
         return pd.DataFrame()
 
 sales_df = load_sales_data()
@@ -245,7 +264,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</table>'
+    html += '<tr>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -317,21 +336,27 @@ elif page == "🚚 Логистика":
     if logistics_df.empty:
         st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
         st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
+        
+        # Диагностика: показываем, какие файлы есть в папке
+        import os
+        with st.expander("🔧 Диагностика"):
+            st.write("Файлы в текущей папке:")
+            for f in os.listdir('.'):
+                if f.endswith('.xlsx'):
+                    st.write(f"  - {f}")
     else:
         # ==========================================
         # ПОДГОТОВКА ДАННЫХ
         # ==========================================
         df_log = logistics_df.copy()
         
-        # Фильтруем строки с флагом 1 (берём только нужные для анализа)
-        if 'Строка содержит данные' in df_log.columns:
-            df_log = df_log[df_log['Строка содержит данные'] == 1]
-        
         # Преобразуем даты
         if 'Дата заказа' in df_log.columns:
             df_log['Дата'] = pd.to_datetime(df_log['Дата заказа'], errors='coerce')
         elif 'Дата отгрузки' in df_log.columns:
             df_log['Дата'] = pd.to_datetime(df_log['Дата отгрузки'], errors='coerce')
+        else:
+            df_log['Дата'] = pd.Timestamp.now()
         
         df_log['Год'] = df_log['Дата'].dt.year
         df_log['Месяц'] = df_log['Дата'].dt.month
@@ -350,6 +375,8 @@ elif page == "🚚 Логистика":
         st.sidebar.header("🚚 Фильтры логистики")
         
         available_years = sorted(df_log['Год'].dropna().unique())
+        if len(available_years) == 0:
+            available_years = [2024]
         selected_year_log = st.sidebar.selectbox("📅 Выберите год", available_years, key="log_year")
         
         df_year_log = df_log[df_log['Год'] == selected_year_log]
@@ -360,19 +387,22 @@ elif page == "🚚 Логистика":
         selected_month_num = available_months[available_months_display.index(selected_month_display)]
         
         # Города
-        all_cities = sorted(df_year_log['Город'].dropna().unique())
-        selected_cities = st.sidebar.multiselect(
-            "🏙️ Города",
-            all_cities,
-            default=all_cities[:5] if len(all_cities) > 5 else all_cities,
-            key="log_cities"
-        )
+        if 'Город' in df_year_log.columns:
+            all_cities = sorted(df_year_log['Город'].dropna().unique())
+            selected_cities = st.sidebar.multiselect(
+                "🏙️ Города",
+                all_cities,
+                default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+                key="log_cities"
+            )
+        else:
+            selected_cities = []
         
         # Фильтруем данные
-        df_filtered_log = df_year_log[
-            (df_year_log['Месяц'] == selected_month_num) &
-            (df_year_log['Город'].isin(selected_cities))
-        ]
+        mask = (df_year_log['Месяц'] == selected_month_num)
+        if selected_cities:
+            mask = mask & (df_year_log['Город'].isin(selected_cities))
+        df_filtered_log = df_year_log[mask]
         
         # ==========================================
         # ГОДОВЫЕ МЕТРИКИ
@@ -394,6 +424,7 @@ elif page == "🚚 Логистика":
         with c2:
             st.metric("📋 Плановые затраты", f"{format_number(year_plan)} ₽")
         with c3:
+            delta_color = "normal" if year_deviation <= 0 else "inverse"
             st.metric("📊 Отклонение", f"{format_number(year_deviation)} ₽", 
                      delta=f"{format_float(year_deviation_pct, 1)}%")
         with c4:
@@ -454,13 +485,14 @@ elif page == "🚚 Логистика":
         
         with col1:
             # Топ городов по затратам
-            city_costs = df_year_log.groupby('Город')['Факт'].sum().nlargest(10).reset_index()
-            if not city_costs.empty:
-                fig = px.bar(city_costs, x='Факт', y='Город', orientation='h',
-                             title='Топ городов по фактическим затратам',
-                             color='Факт', color_continuous_scale='Reds',
-                             labels={'Факт': 'Затраты (₽)', 'Город': ''})
-                st.plotly_chart(fig, use_container_width=True)
+            if 'Город' in df_year_log.columns:
+                city_costs = df_year_log.groupby('Город')['Факт'].sum().nlargest(10).reset_index()
+                if not city_costs.empty:
+                    fig = px.bar(city_costs, x='Факт', y='Город', orientation='h',
+                                 title='Топ городов по фактическим затратам',
+                                 color='Факт', color_continuous_scale='Reds',
+                                 labels={'Факт': 'Затраты (₽)', 'Город': ''})
+                    st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             # Динамика план vs факт по месяцам
@@ -475,8 +507,8 @@ elif page == "🚚 Логистика":
                 st.plotly_chart(fig2, use_container_width=True)
         
         # Третий график
-        st.subheader("📊 Отклонение факта от плана по месяцам")
         if not monthly.empty:
+            st.subheader("📊 Отклонение факта от плана по месяцам")
             fig3 = px.bar(monthly, x='Название', y='Отклонение',
                           title='Отклонение (Факт - План)',
                           color='Отклонение', color_continuous_scale='RdYlGn',
