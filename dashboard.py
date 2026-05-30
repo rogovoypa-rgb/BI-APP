@@ -241,7 +241,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</table>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -374,44 +374,20 @@ elif page == "🚚 Логистика":
         # ВКЛАДКИ НА СТРАНИЦЕ ЛОГИСТИКИ
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Общая аналитика", "📋 Логистика месяц+город+SKU+заказ", "📋 Логистика месяц+город+заказ", "📊 Сводка по городам"])
         
-        # ВКЛАДКА 1: ОБЩАЯ АНАЛИТИКА (с фильтрами внутри)
+        # ВКЛАДКА 1: ОБЩАЯ АНАЛИТИКА
         with tab1:
             st.header("📦 Общая аналитика логистики")
             
-            # Фильтры внутри вкладки
-            col_filter1, col_filter2, col_filter3 = st.columns(3)
-            
+            # Фильтр по году (остаётся вверху)
+            col_filter1 = st.columns(1)[0]
             with col_filter1:
                 available_years = sorted(df_log['Год'].dropna().unique())
                 if len(available_years) == 0:
                     available_years = [2024]
                 selected_year_log = st.selectbox("📅 Выберите год", available_years, key="log_year")
             
-            with col_filter2:
-                df_year_log = df_log[df_log['Год'] == selected_year_log]
-                available_months = sorted(df_year_log['Месяц'].dropna().unique())
-                available_months_display = [month_names[m] for m in available_months]
-                selected_month_display = st.selectbox("📅 Выберите месяц", available_months_display, key="log_month")
-                selected_month_num = available_months[available_months_display.index(selected_month_display)]
-            
-            with col_filter3:
-                df_month_log = df_year_log[df_year_log['Месяц'] == selected_month_num]
-                if 'Город' in df_month_log.columns:
-                    all_cities = sorted(df_month_log['Город'].dropna().unique())
-                    selected_cities = st.multiselect(
-                        "🏙️ Города",
-                        all_cities,
-                        default=all_cities[:5] if len(all_cities) > 5 else all_cities,
-                        key="log_cities"
-                    )
-                else:
-                    selected_cities = []
-            
-            # Фильтруем данные
-            mask = (df_log['Год'] == selected_year_log) & (df_log['Месяц'] == selected_month_num)
-            if selected_cities:
-                mask = mask & (df_log['Город'].isin(selected_cities))
-            df_filtered_log = df_log[mask]
+            # Фильтруем данные по году
+            df_year_log = df_log[df_log['Год'] == selected_year_log]
             
             # ГОДОВЫЕ МЕТРИКИ
             st.divider()
@@ -488,23 +464,15 @@ elif page == "🚚 Логистика":
             
             st.divider()
             
-            # ГРАФИКИ
+            # ГРАФИКИ (без фильтрации по месяцам и городам)
             col1, col2 = st.columns(2)
             
             with col1:
-                if 'Город' in df_year_log.columns and selected_cities:
-                    city_costs = df_filtered_log.groupby('Город')['Факт'].sum().nlargest(10).reset_index()
-                    if not city_costs.empty:
-                        fig = px.bar(city_costs, x='Факт', y='Город', orientation='h',
-                                     title='Топ городов по фактическим затратам PLM',
-                                     color='Факт', color_continuous_scale='Reds',
-                                     labels={'Факт': 'Затраты (₽)', 'Город': ''})
-                        st.plotly_chart(fig, use_container_width=True)
-                elif 'Город' in df_year_log.columns:
+                if 'Город' in df_year_log.columns:
                     city_costs = df_year_log.groupby('Город')['Факт'].sum().nlargest(10).reset_index()
                     if not city_costs.empty:
                         fig = px.bar(city_costs, x='Факт', y='Город', orientation='h',
-                                     title='Топ городов по фактическим затратам PLM (все города)',
+                                     title='Топ городов по фактическим затратам PLM',
                                      color='Факт', color_continuous_scale='Reds',
                                      labels={'Факт': 'Затраты (₽)', 'Город': ''})
                         st.plotly_chart(fig, use_container_width=True)
@@ -528,20 +496,83 @@ elif page == "🚚 Логистика":
                               labels={'Отклонение': 'Отклонение (₽)', 'Название': 'Месяц'})
                 st.plotly_chart(fig3, use_container_width=True)
             
-            # ДЕТАЛИ ЗА ВЫБРАННЫЙ МЕСЯЦ
+            # ==========================================
+            # ДЕТАЛИ ЗА МЕСЯЦ (с выбором месяца и города)
+            # ==========================================
             st.divider()
-            st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display} {selected_year_log}")
+            st.subheader("📊 ДЕТАЛИ ЗА МЕСЯЦ")
             
+            # Фильтры для детализации
+            col_filter2, col_filter3 = st.columns(2)
+            
+            with col_filter2:
+                available_months = sorted(df_year_log['Месяц'].dropna().unique())
+                available_months_display = [month_names[m] for m in available_months]
+                selected_month_display = st.selectbox("Выберите месяц", available_months_display, key="detail_month")
+                selected_month_num = available_months[available_months_display.index(selected_month_display)]
+            
+            with col_filter3:
+                df_month_log = df_year_log[df_year_log['Месяц'] == selected_month_num]
+                if 'Город' in df_month_log.columns:
+                    all_cities = sorted(df_month_log['Город'].dropna().unique())
+                    selected_cities = st.multiselect(
+                        "Выберите города",
+                        all_cities,
+                        default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+                        key="detail_cities"
+                    )
+                else:
+                    selected_cities = []
+            
+            # Фильтруем данные
+            mask = (df_year_log['Месяц'] == selected_month_num)
+            if selected_cities:
+                mask = mask & (df_year_log['Город'].isin(selected_cities))
+            df_detail_month = df_year_log[mask]
+            
+            # Метрики за выбранный месяц
             d1, d2, d3, d4 = st.columns(4)
             with d1:
-                st.metric("💰 Факт PLM", f"{format_number(df_filtered_log['Факт'].sum())} ₽")
+                st.metric("💰 Факт PLM", f"{format_number(df_detail_month['Факт'].sum())} ₽")
             with d2:
-                st.metric("📋 План PLM", f"{format_number(df_filtered_log['План'].sum())} ₽")
+                st.metric("📋 План PLM", f"{format_number(df_detail_month['План'].sum())} ₽")
             with d3:
-                dev = df_filtered_log['Факт'].sum() - df_filtered_log['План'].sum()
+                dev = df_detail_month['Факт'].sum() - df_detail_month['План'].sum()
                 st.metric("📊 Отклонение", f"{format_number(dev)} ₽")
             with d4:
-                st.metric("🎯 Затраты на SKU", f"{format_number(df_filtered_log['Затраты_PLM_на_SKU'].sum())} ₽")
+                st.metric("🎯 Затраты на SKU", f"{format_number(df_detail_month['Затраты_PLM_на_SKU'].sum())} ₽")
+            
+            # Таблица детализации по заказам за выбранный месяц и город
+            if not df_detail_month.empty:
+                st.subheader("📋 Детализация по заказам")
+                
+                order_detail = df_detail_month.groupby('Номер заказа').agg({
+                    'Затраты_PLM_на_SKU': 'sum',
+                    'Дата заказа': 'first',
+                    'Город': 'first'
+                }).reset_index()
+                order_detail = order_detail.sort_values('Дата заказа', ascending=False)
+                
+                def format_order_num(order_num):
+                    try:
+                        s = str(order_num)
+                        if len(s) == 8:
+                            return f"{s[6:8]}.{s[4:6]}.{s[0:4]}"
+                        return s
+                    except:
+                        return str(order_num)
+                
+                order_detail['Номер заказа (дата)'] = order_detail['Номер заказа'].apply(format_order_num)
+                
+                display_orders = order_detail[['Номер заказа (дата)', 'Город', 'Затраты_PLM_на_SKU']].copy()
+                display_orders['Затраты_PLM_на_SKU'] = display_orders['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                
+                st.dataframe(display_orders, use_container_width=True, hide_index=True)
+                
+                csv_detail = order_detail[['Номер заказа', 'Дата заказа', 'Город', 'Затраты_PLM_на_SKU']].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                st.download_button("📥 Скачать детализацию по заказам (CSV)", csv_detail, f"logistics_detail_{selected_year_log}_{selected_month_num}.csv", "text/csv")
+            else:
+                st.info("Нет данных за выбранный период")
         
         # ВКЛАДКА 2: ЛОГИСТИКА МЕСЯЦ+ГОРОД+SKU+ЗАКАЗ
         with tab2:
