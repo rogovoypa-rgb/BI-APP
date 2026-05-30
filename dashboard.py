@@ -581,4 +581,120 @@ elif page == "🚚 Логистика":
                 
                 m1, m2, m3 = st.columns(3)
                 with m1:
-                    total_orders =
+                    total_orders = len(order_summary)
+                    st.metric("📋 Кол-во заказов", total_orders)
+                with m2:
+                    total_cost = order_summary['Затраты_PLM_на_SKU'].sum()
+                    st.metric("💰 Общие затраты PLM на доставку SKU", f"{format_number(total_cost)} ₽")
+                with m3:
+                    avg_cost = total_cost / total_orders if total_orders > 0 else 0
+                    st.metric("📊 Средние затраты на заказ", f"{format_number(avg_cost)} ₽")
+                
+                st.divider()
+                st.subheader("📋 Детализация по заказам")
+                
+                display_df = order_summary[['Номер заказа (дата)', 'Кол_во_паллет', 'Факт', 'План', 'Затраты_PLM_на_SKU']].copy()
+                display_df['Затраты_PLM_на_SKU'] = display_df['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                display_df['Факт'] = display_df['Факт'].apply(lambda x: f"{format_number(x)} ₽")
+                display_df['План'] = display_df['План'].apply(lambda x: f"{format_number(x)} ₽")
+                display_df['Кол_во_паллет'] = display_df['Кол_во_паллет'].apply(format_number)
+                
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+                
+                if len(order_summary) > 1:
+                    st.subheader("📊 Динамика затрат по заказам")
+                    fig_orders = px.bar(order_summary, x='Номер заказа (дата)', y='Затраты_PLM_на_SKU',
+                                        title='Затраты PLM на доставку SKU по каждому заказу',
+                                        labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Номер заказа (дата)': 'Номер заказа'})
+                    st.plotly_chart(fig_orders, use_container_width=True)
+                
+                csv_detail = order_summary[['Номер заказа', 'Дата заказа', 'Кол_во_паллет', 'Факт', 'План', 'Затраты_PLM_на_SKU']].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                st.download_button("📥 Скачать детализацию по заказам (CSV)", csv_detail, f"logistics_details_{selected_year_tab2}_{selected_month_tab2}_{selected_city_tab2}_{selected_sku_tab2}.csv", "text/csv")
+        
+        # ВКЛАДКА 3: ЛОГИСТИКА МЕСЯЦ+ГОРОД+ЗАКАЗ
+        with tab3:
+            st.subheader("📋 Сводка по заказу")
+            st.caption("Сумма всех 'Затраты PLM на доставку SKU' по выбранному заказу")
+            
+            col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
+            
+            with col_filter1:
+                years_available = sorted(df_log['Год'].dropna().unique())
+                selected_year_tab3 = st.selectbox("📅 Год", years_available, key="tab3_year")
+            
+            with col_filter2:
+                df_year_tab3 = df_log[df_log['Год'] == selected_year_tab3]
+                months_available = sorted(df_year_tab3['Месяц'].dropna().unique())
+                months_display_tab3 = [month_names[m] for m in months_available]
+                selected_month_display_tab3 = st.selectbox("📅 Месяц", months_display_tab3, key="tab3_month")
+                selected_month_tab3 = months_available[months_display_tab3.index(selected_month_display_tab3)]
+            
+            with col_filter3:
+                df_month_tab3 = df_year_tab3[df_year_tab3['Месяц'] == selected_month_tab3]
+                cities_available = sorted(df_month_tab3['Город'].dropna().unique())
+                selected_city_tab3 = st.selectbox("🏙️ Город", cities_available, key="tab3_city")
+            
+            with col_filter4:
+                df_city_tab3 = df_month_tab3[df_month_tab3['Город'] == selected_city_tab3]
+                orders_available = sorted(df_city_tab3['Номер заказа'].dropna().unique(), reverse=True)
+                
+                def format_order_num(order_num):
+                    try:
+                        s = str(order_num)
+                        if len(s) == 8:
+                            return f"{s[6:8]}.{s[4:6]}.{s[0:4]}"
+                        return s
+                    except:
+                        return str(order_num)
+                
+                orders_display = [format_order_num(o) for o in orders_available]
+                selected_order_display = st.selectbox("📋 Номер заказа (дата)", orders_display, key="tab3_order")
+                selected_order_tab3 = orders_available[orders_display.index(selected_order_display)]
+            
+            df_order = df_log[
+                (df_log['Год'] == selected_year_tab3) &
+                (df_log['Месяц'] == selected_month_tab3) &
+                (df_log['Город'] == selected_city_tab3) &
+                (df_log['Номер заказа'] == selected_order_tab3)
+            ]
+            
+            if df_order.empty:
+                st.warning("Нет данных за выбранный период")
+            else:
+                total_sku_cost = df_order['Затраты_PLM_на_SKU'].sum()
+                unique_skus = df_order['Номенклатура'].nunique()
+                
+                st.subheader(f"📊 Сводка по заказу **{selected_order_display}**")
+                st.caption(f"📍 Город: {selected_city_tab3} | 📅 {selected_month_display_tab3} {selected_year_tab3}")
+                
+                m1, m2 = st.columns(2)
+                with m1:
+                    st.metric("💰 Сумма затрат PLM на доставку SKU", f"{format_number(total_sku_cost)} ₽")
+                with m2:
+                    st.metric("📦 Количество уникальных SKU", unique_skus)
+                
+                st.divider()
+                st.subheader("📋 Детализация по SKU в заказе")
+                
+                sku_summary = df_order.groupby('Номенклатура').agg({
+                    'Затраты_PLM_на_SKU': 'sum',
+                    'Кол_во_паллет': 'sum'
+                }).reset_index()
+                sku_summary = sku_summary.sort_values('Затраты_PLM_на_SKU', ascending=False)
+                
+                display_sku = sku_summary.copy()
+                display_sku['Затраты_PLM_на_SKU'] = display_sku['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                display_sku['Кол_во_паллет'] = display_sku['Кол_во_паллет'].apply(format_number)
+                
+                st.dataframe(display_sku, use_container_width=True, hide_index=True)
+                
+                if len(sku_summary) > 1:
+                    st.subheader("📊 Затраты PLM на доставку SKU по каждому SKU")
+                    fig_sku = px.bar(sku_summary, x='Номенклатура', y='Затраты_PLM_на_SKU',
+                                     title=f'Распределение затрат по SKU в заказе {selected_order_display}',
+                                     labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Номенклатура': 'SKU'})
+                    fig_sku.update_layout(xaxis_tickangle=-45)
+                    st.plotly_chart(fig_sku, use_container_width=True)
+                
+                csv_order = sku_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                st.download_button("📥 Скачать детализацию по заказу (CSV)", csv_order, f"logistics_order_{selected_year_tab3}_{selected_month_tab3}_{selected_city_tab3}_{selected_order_tab3}.csv", "text/csv")
