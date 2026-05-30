@@ -241,7 +241,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</tr>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -364,6 +364,9 @@ elif page == "🚚 Логистика":
         
         df_log['Затраты_PLM_на_SKU'] = df_log['Факт'] * df_log['Процент_доставки'].fillna(1)
         df_log['Отклонение'] = df_log['Факт'] - df_log['План']
+        
+        # СТОИМОСТЬ ТОВАРА В ЗАКАЗЕ (столбец 25)
+        df_log['Стоимость_товара_в_заказе'] = pd.to_numeric(df_log['Стоимость товара в заказе'], errors='coerce')
         
         # ВКЛАДКИ НА СТРАНИЦЕ ЛОГИСТИКИ
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Общая аналитика", "📋 Логистика месяц+город+SKU+заказ", "📋 Логистика месяц+город+заказ", "📊 Сводка по городам"])
@@ -701,7 +704,7 @@ elif page == "🚚 Логистика":
         # ВКЛАДКА 4: СВОДКА ПО ГОРОДАМ
         with tab4:
             st.subheader("📊 Сводка затрат PLM на доставку SKU по городам")
-            st.caption("Сумма 'Затраты PLM на доставку SKU' по всем заказам за выбранный месяц в разрезе городов")
+            st.caption("Сумма 'Затраты PLM на доставку SKU' и 'Стоимость товара в заказе' по всем заказам за выбранный месяц")
             
             col_filter1, col_filter2, col_filter3 = st.columns(3)
             
@@ -731,8 +734,10 @@ elif page == "🚚 Логистика":
                 st.warning("Нет данных за выбранный период")
             else:
                 if selected_city_tab4 != "Все города":
+                    # Группируем по заказам для конкретного города
                     order_summary = df_filtered_tab4.groupby('Номер заказа').agg({
                         'Затраты_PLM_на_SKU': 'sum',
+                        'Стоимость_товара_в_заказе': 'sum',
                         'Дата заказа': 'first'
                     }).reset_index()
                     order_summary = order_summary.sort_values('Дата заказа', ascending=False)
@@ -749,21 +754,29 @@ elif page == "🚚 Логистика":
                     order_summary['Номер заказа (дата)'] = order_summary['Номер заказа'].apply(format_order_num)
                     
                     total_cost = order_summary['Затраты_PLM_на_SKU'].sum()
+                    total_goods = order_summary['Стоимость_товара_в_заказе'].sum()
                     
                     st.subheader(f"📊 Результаты для города: **{selected_city_tab4}**")
                     st.caption(f"📅 {selected_month_display_tab4} {selected_year_tab4}")
                     
-                    m1, m2 = st.columns(2)
+                    m1, m2, m3 = st.columns(3)
                     with m1:
-                        st.metric("💰 Общая сумма затрат PLM на доставку SKU", f"{format_number(total_cost)} ₽")
+                        st.metric("💰 Затраты PLM на доставку SKU", f"{format_number(total_cost)} ₽")
                     with m2:
+                        st.metric("📦 Стоимость товара в заказе", f"{format_number(total_goods)} ₽")
+                    with m3:
                         st.metric("📋 Количество заказов", len(order_summary))
+                    
+                    if total_goods > 0:
+                        cost_percent = (total_cost / total_goods * 100)
+                        st.metric("📊 Доля затрат PLM в стоимости товара", f"{format_float(cost_percent, 1)}%")
                     
                     st.divider()
                     st.subheader("📋 Детализация по заказам")
                     
-                    display_orders = order_summary[['Номер заказа (дата)', 'Затраты_PLM_на_SKU']].copy()
+                    display_orders = order_summary[['Номер заказа (дата)', 'Затраты_PLM_на_SKU', 'Стоимость_товара_в_заказе']].copy()
                     display_orders['Затраты_PLM_на_SKU'] = display_orders['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                    display_orders['Стоимость_товара_в_заказе'] = display_orders['Стоимость_товара_в_заказе'].apply(lambda x: f"{format_number(x)} ₽")
                     
                     st.dataframe(display_orders, use_container_width=True, hide_index=True)
                     
@@ -774,39 +787,45 @@ elif page == "🚚 Логистика":
                                             labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Номер заказа (дата)': 'Номер заказа'})
                         st.plotly_chart(fig_orders, use_container_width=True)
                     
-                    csv_data = order_summary[['Номер заказа', 'Дата заказа', 'Затраты_PLM_на_SKU']].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                    csv_data = order_summary[['Номер заказа', 'Дата заказа', 'Затраты_PLM_на_SKU', 'Стоимость_товара_в_заказе']].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                     st.download_button("📥 Скачать данные по городу (CSV)", csv_data, f"logistics_city_{selected_year_tab4}_{selected_month_tab4}_{selected_city_tab4}.csv", "text/csv")
                 
                 else:
+                    # Сводка по всем городам
                     city_summary = df_filtered_tab4.groupby('Город').agg({
                         'Затраты_PLM_на_SKU': 'sum',
-                        'Номер заказа': 'nunique',
-                        'Кол_во_паллет': 'sum'
+                        'Стоимость_товара_в_заказе': 'sum',
+                        'Номер заказа': 'nunique'
                     }).reset_index()
                     city_summary = city_summary.sort_values('Затраты_PLM_на_SKU', ascending=False)
                     city_summary = city_summary.rename(columns={'Номер заказа': 'Кол-во заказов'})
                     
-                    total_all_cities = city_summary['Затраты_PLM_на_SKU'].sum()
+                    total_all_costs = city_summary['Затраты_PLM_на_SKU'].sum()
+                    total_all_goods = city_summary['Стоимость_товара_в_заказе'].sum()
                     total_orders_all = city_summary['Кол-во заказов'].sum()
-                    total_pallets_all = city_summary['Кол_во_паллет'].sum()
                     
                     st.subheader(f"📊 Сводка по всем городам за {selected_month_display_tab4} {selected_year_tab4}")
                     
                     m1, m2, m3 = st.columns(3)
                     with m1:
-                        st.metric("💰 Общая сумма затрат PLM на доставку SKU", f"{format_number(total_all_cities)} ₽")
+                        st.metric("💰 Общие затраты PLM на доставку SKU", f"{format_number(total_all_costs)} ₽")
                     with m2:
-                        st.metric("📋 Общее количество заказов", format_number(total_orders_all))
+                        st.metric("📦 Общая стоимость товара в заказах", f"{format_number(total_all_goods)} ₽")
                     with m3:
-                        st.metric("📦 Общее количество паллет", format_number(total_pallets_all))
+                        st.metric("📋 Общее количество заказов", format_number(total_orders_all))
+                    
+                    if total_all_goods > 0:
+                        overall_percent = (total_all_costs / total_all_goods * 100)
+                        st.metric("📊 Общая доля затрат PLM в стоимости товара", f"{format_float(overall_percent, 1)}%")
                     
                     st.divider()
                     st.subheader("📋 Детализация по городам")
                     
                     display_cities = city_summary.copy()
                     display_cities['Затраты_PLM_на_SKU'] = display_cities['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                    display_cities['Стоимость_товара_в_заказе'] = display_cities['Стоимость_товара_в_заказе'].apply(lambda x: f"{format_number(x)} ₽")
                     display_cities['Кол-во заказов'] = display_cities['Кол-во заказов'].apply(format_number)
-                    display_cities['Кол_во_паллет'] = display_cities['Кол_во_паллет'].apply(format_number)
+                    display_cities['Доля затрат'] = (city_summary['Затраты_PLM_на_SKU'] / city_summary['Стоимость_товара_в_заказе'] * 100).apply(lambda x: f"{format_float(x, 1)}%")
                     
                     st.dataframe(display_cities, use_container_width=True, hide_index=True)
                     
@@ -819,9 +838,17 @@ elif page == "🚚 Логистика":
                         st.plotly_chart(fig_cities, use_container_width=True)
                     
                     if len(city_summary) > 1:
-                        st.subheader("🥧 Доля затрат по городам")
+                        st.subheader("📊 Стоимость товара в заказах по городам")
+                        fig_goods = px.bar(city_summary, x='Стоимость_товара_в_заказе', y='Город', orientation='h',
+                                           title=f'Стоимость товара по городам за {selected_month_display_tab4} {selected_year_tab4}',
+                                           color='Стоимость_товара_в_заказе', color_continuous_scale='Greens',
+                                           labels={'Стоимость_товара_в_заказе': 'Стоимость товара (₽)', 'Город': ''})
+                        st.plotly_chart(fig_goods, use_container_width=True)
+                    
+                    if len(city_summary) > 1:
+                        st.subheader("🥧 Доля затрат PLM по городам")
                         fig_pie = px.pie(city_summary, values='Затраты_PLM_на_SKU', names='Город',
-                                         title=f'Распределение затрат по городам за {selected_month_display_tab4} {selected_year_tab4}')
+                                         title=f'Распределение затрат PLM по городам за {selected_month_display_tab4} {selected_year_tab4}')
                         st.plotly_chart(fig_pie, use_container_width=True)
                     
                     csv_data = city_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
