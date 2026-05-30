@@ -366,7 +366,7 @@ elif page == "🚚 Логистика":
         df_log['Отклонение'] = df_log['Факт'] - df_log['План']
         
         # ВКЛАДКИ НА СТРАНИЦЕ ЛОГИСТИКИ
-        tab1, tab2, tab3 = st.tabs(["📊 Общая аналитика", "📋 Логистика месяц+город+SKU+заказ", "📋 Логистика месяц+город+заказ"])
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Общая аналитика", "📋 Логистика месяц+город+SKU+заказ", "📋 Логистика месяц+город+заказ", "📊 Сводка по городам"])
         
         # ВКЛАДКА 1: ОБЩАЯ АНАЛИТИКА
         with tab1:
@@ -564,8 +564,7 @@ elif page == "🚚 Логистика":
                 }).reset_index()
                 order_summary = order_summary.sort_values('Дата заказа', ascending=False)
                 
-                # Функция для форматирования номера заказа
-                def format_order_number(order_num):
+                def format_order_num(order_num):
                     try:
                         s = str(order_num)
                         if len(s) == 8:
@@ -574,7 +573,7 @@ elif page == "🚚 Логистика":
                     except:
                         return str(order_num)
                 
-                order_summary['Номер заказа (дата)'] = order_summary['Номер заказа'].apply(format_order_number)
+                order_summary['Номер заказа (дата)'] = order_summary['Номер заказа'].apply(format_order_num)
                 
                 st.subheader(f"📊 Результаты для SKU: **{selected_sku_tab2}**")
                 st.caption(f"📍 Город: {selected_city_tab2} | 📅 {selected_month_display_tab2} {selected_year_tab2}")
@@ -698,3 +697,132 @@ elif page == "🚚 Логистика":
                 
                 csv_order = sku_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                 st.download_button("📥 Скачать детализацию по заказу (CSV)", csv_order, f"logistics_order_{selected_year_tab3}_{selected_month_tab3}_{selected_city_tab3}_{selected_order_tab3}.csv", "text/csv")
+        
+        # ВКЛАДКА 4: СВОДКА ПО ГОРОДАМ
+        with tab4:
+            st.subheader("📊 Сводка затрат PLM на доставку SKU по городам")
+            st.caption("Сумма 'Затраты PLM на доставку SKU' по всем заказам за выбранный месяц в разрезе городов")
+            
+            col_filter1, col_filter2, col_filter3 = st.columns(3)
+            
+            with col_filter1:
+                years_available = sorted(df_log['Год'].dropna().unique())
+                selected_year_tab4 = st.selectbox("📅 Год", years_available, key="tab4_year")
+            
+            with col_filter2:
+                df_year_tab4 = df_log[df_log['Год'] == selected_year_tab4]
+                months_available = sorted(df_year_tab4['Месяц'].dropna().unique())
+                months_display_tab4 = [month_names[m] for m in months_available]
+                selected_month_display_tab4 = st.selectbox("📅 Месяц", months_display_tab4, key="tab4_month")
+                selected_month_tab4 = months_available[months_display_tab4.index(selected_month_display_tab4)]
+            
+            with col_filter3:
+                df_month_tab4 = df_year_tab4[df_year_tab4['Месяц'] == selected_month_tab4]
+                cities_available = sorted(df_month_tab4['Город'].dropna().unique())
+                selected_city_tab4 = st.selectbox("🏙️ Город", ["Все города"] + cities_available, key="tab4_city")
+            
+            mask = (df_log['Год'] == selected_year_tab4) & (df_log['Месяц'] == selected_month_tab4)
+            if selected_city_tab4 != "Все города":
+                mask = mask & (df_log['Город'] == selected_city_tab4)
+            
+            df_filtered_tab4 = df_log[mask]
+            
+            if df_filtered_tab4.empty:
+                st.warning("Нет данных за выбранный период")
+            else:
+                if selected_city_tab4 != "Все города":
+                    order_summary = df_filtered_tab4.groupby('Номер заказа').agg({
+                        'Затраты_PLM_на_SKU': 'sum',
+                        'Дата заказа': 'first'
+                    }).reset_index()
+                    order_summary = order_summary.sort_values('Дата заказа', ascending=False)
+                    
+                    def format_order_num(order_num):
+                        try:
+                            s = str(order_num)
+                            if len(s) == 8:
+                                return f"{s[6:8]}.{s[4:6]}.{s[0:4]}"
+                            return s
+                        except:
+                            return str(order_num)
+                    
+                    order_summary['Номер заказа (дата)'] = order_summary['Номер заказа'].apply(format_order_num)
+                    
+                    total_cost = order_summary['Затраты_PLM_на_SKU'].sum()
+                    
+                    st.subheader(f"📊 Результаты для города: **{selected_city_tab4}**")
+                    st.caption(f"📅 {selected_month_display_tab4} {selected_year_tab4}")
+                    
+                    m1, m2 = st.columns(2)
+                    with m1:
+                        st.metric("💰 Общая сумма затрат PLM на доставку SKU", f"{format_number(total_cost)} ₽")
+                    with m2:
+                        st.metric("📋 Количество заказов", len(order_summary))
+                    
+                    st.divider()
+                    st.subheader("📋 Детализация по заказам")
+                    
+                    display_orders = order_summary[['Номер заказа (дата)', 'Затраты_PLM_на_SKU']].copy()
+                    display_orders['Затраты_PLM_на_SKU'] = display_orders['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                    
+                    st.dataframe(display_orders, use_container_width=True, hide_index=True)
+                    
+                    if len(order_summary) > 1:
+                        st.subheader("📊 Динамика затрат по заказам")
+                        fig_orders = px.bar(order_summary, x='Номер заказа (дата)', y='Затраты_PLM_на_SKU',
+                                            title=f'Затраты PLM на доставку SKU по заказам в городе {selected_city_tab4}',
+                                            labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Номер заказа (дата)': 'Номер заказа'})
+                        st.plotly_chart(fig_orders, use_container_width=True)
+                    
+                    csv_data = order_summary[['Номер заказа', 'Дата заказа', 'Затраты_PLM_на_SKU']].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                    st.download_button("📥 Скачать данные по городу (CSV)", csv_data, f"logistics_city_{selected_year_tab4}_{selected_month_tab4}_{selected_city_tab4}.csv", "text/csv")
+                
+                else:
+                    city_summary = df_filtered_tab4.groupby('Город').agg({
+                        'Затраты_PLM_на_SKU': 'sum',
+                        'Номер заказа': 'nunique',
+                        'Кол_во_паллет': 'sum'
+                    }).reset_index()
+                    city_summary = city_summary.sort_values('Затраты_PLM_на_SKU', ascending=False)
+                    city_summary = city_summary.rename(columns={'Номер заказа': 'Кол-во заказов'})
+                    
+                    total_all_cities = city_summary['Затраты_PLM_на_SKU'].sum()
+                    total_orders_all = city_summary['Кол-во заказов'].sum()
+                    total_pallets_all = city_summary['Кол_во_паллет'].sum()
+                    
+                    st.subheader(f"📊 Сводка по всем городам за {selected_month_display_tab4} {selected_year_tab4}")
+                    
+                    m1, m2, m3 = st.columns(3)
+                    with m1:
+                        st.metric("💰 Общая сумма затрат PLM на доставку SKU", f"{format_number(total_all_cities)} ₽")
+                    with m2:
+                        st.metric("📋 Общее количество заказов", format_number(total_orders_all))
+                    with m3:
+                        st.metric("📦 Общее количество паллет", format_number(total_pallets_all))
+                    
+                    st.divider()
+                    st.subheader("📋 Детализация по городам")
+                    
+                    display_cities = city_summary.copy()
+                    display_cities['Затраты_PLM_на_SKU'] = display_cities['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
+                    display_cities['Кол-во заказов'] = display_cities['Кол-во заказов'].apply(format_number)
+                    display_cities['Кол_во_паллет'] = display_cities['Кол_во_паллет'].apply(format_number)
+                    
+                    st.dataframe(display_cities, use_container_width=True, hide_index=True)
+                    
+                    if len(city_summary) > 1:
+                        st.subheader("📊 Затраты PLM на доставку SKU по городам")
+                        fig_cities = px.bar(city_summary, x='Затраты_PLM_на_SKU', y='Город', orientation='h',
+                                            title=f'Затраты по городам за {selected_month_display_tab4} {selected_year_tab4}',
+                                            color='Затраты_PLM_на_SKU', color_continuous_scale='Blues',
+                                            labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Город': ''})
+                        st.plotly_chart(fig_cities, use_container_width=True)
+                    
+                    if len(city_summary) > 1:
+                        st.subheader("🥧 Доля затрат по городам")
+                        fig_pie = px.pie(city_summary, values='Затраты_PLM_на_SKU', names='Город',
+                                         title=f'Распределение затрат по городам за {selected_month_display_tab4} {selected_year_tab4}')
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                    
+                    csv_data = city_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                    st.download_button("📥 Скачать сводку по городам (CSV)", csv_data, f"logistics_cities_summary_{selected_year_tab4}_{selected_month_tab4}.csv", "text/csv")
