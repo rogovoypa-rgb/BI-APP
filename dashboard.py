@@ -327,9 +327,7 @@ elif page == "🚚 Логистика":
                 if f.endswith('.xlsx'):
                     st.write(f"  - {f}")
     else:
-        # ==========================================
         # ПОДГОТОВКА ДАННЫХ
-        # ==========================================
         df_log = logistics_df.copy()
         
         if 'Дата заказа' in df_log.columns:
@@ -367,14 +365,10 @@ elif page == "🚚 Логистика":
         df_log['Затраты_PLM_на_SKU'] = df_log['Факт'] * df_log['Процент_доставки'].fillna(1)
         df_log['Отклонение'] = df_log['Факт'] - df_log['План']
         
-        # ==========================================
         # ВКЛАДКИ НА СТРАНИЦЕ ЛОГИСТИКИ
-        # ==========================================
         tab1, tab2, tab3 = st.tabs(["📊 Общая аналитика", "📋 Логистика месяц+город+SKU+заказ", "📋 Логистика месяц+город+заказ"])
         
-        # ==========================================
         # ВКЛАДКА 1: ОБЩАЯ АНАЛИТИКА
-        # ==========================================
         with tab1:
             st.sidebar.header("🚚 Фильтры логистики")
             
@@ -423,8 +417,7 @@ elif page == "🚚 Логистика":
             with c2:
                 st.metric("📋 Плановые затраты PLM", f"{format_number(year_plan)} ₽")
             with c3:
-                st.metric("📊 Отклонение", f"{format_number(year_deviation)} ₽", 
-                         delta=f"{format_float(year_deviation_pct, 1)}%")
+                st.metric("📊 Отклонение", f"{format_number(year_deviation)} ₽", delta=f"{format_float(year_deviation_pct, 1)}%")
             with c4:
                 st.metric("📦 Кол-во паллет", f"{format_number(year_pallets)}")
             
@@ -441,7 +434,7 @@ elif page == "🚚 Логистика":
                 st.metric("📦 Средняя цена паллеты", f"{format_number(avg_pallet)} ₽")
             
             year_sku_costs = df_year_log['Затраты_PLM_на_SKU'].sum()
-            st.metric("🎯 Затраты PLM на доставку SKU (с учётом доли)", f"{format_number(year_sku_costs)} ₽")
+            st.metric("🎯 Затраты PLM на доставку SKU", f"{format_number(year_sku_costs)} ₽")
             
             st.divider()
             
@@ -525,9 +518,7 @@ elif page == "🚚 Логистика":
             with d4:
                 st.metric("🎯 Затраты на SKU", f"{format_number(df_filtered_log['Затраты_PLM_на_SKU'].sum())} ₽")
         
-        # ==========================================
         # ВКЛАДКА 2: ЛОГИСТИКА МЕСЯЦ+ГОРОД+SKU+ЗАКАЗ
-        # ==========================================
         with tab2:
             st.subheader("📋 Детализация логистики по заказам")
             
@@ -585,4 +576,6 @@ elif page == "🚚 Логистика":
                     st.metric("💰 Общие затраты PLM на доставку SKU", f"{format_number(total_cost)} ₽")
                 with m3:
                     avg_cost = total_cost / total_orders if total_orders > 0 else 0
-                    st.metric("
+                    st.metric("📊 Средние затраты на заказ", f"{format_number(avg_cost)} ₽")
+                
+                st
