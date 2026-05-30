@@ -564,18 +564,21 @@ elif page == "🚚 Логистика":
                 }).reset_index()
                 order_summary = order_summary.sort_values('Дата заказа', ascending=False)
                 
+                # Функция для форматирования номера заказа
+                def format_order_number(order_num):
+                    try:
+                        s = str(order_num)
+                        if len(s) == 8:
+                            return f"{s[6:8]}.{s[4:6]}.{s[0:4]}"
+                        return s
+                    except:
+                        return str(order_num)
+                
+                order_summary['Номер заказа (дата)'] = order_summary['Номер заказа'].apply(format_order_number)
+                
                 st.subheader(f"📊 Результаты для SKU: **{selected_sku_tab2}**")
                 st.caption(f"📍 Город: {selected_city_tab2} | 📅 {selected_month_display_tab2} {selected_year_tab2}")
                 
                 m1, m2, m3 = st.columns(3)
                 with m1:
-                    total_orders = len(order_summary)
-                    st.metric("📋 Кол-во заказов", total_orders)
-                with m2:
-                    total_cost = order_summary['Затраты_PLM_на_SKU'].sum()
-                    st.metric("💰 Общие затраты PLM на доставку SKU", f"{format_number(total_cost)} ₽")
-                with m3:
-                    avg_cost = total_cost / total_orders if total_orders > 0 else 0
-                    st.metric("📊 Средние затраты на заказ", f"{format_number(avg_cost)} ₽")
-                
-                st
+                    total_orders =
