@@ -36,16 +36,13 @@ def format_float(value, decimals=1):
 def load_sales_data():
     df = pd.read_excel('sales_data.xlsx')
     
-    # Работа с датой (столбец 'Документ.Дата')
     df['Дата'] = pd.to_datetime(df['Документ.Дата'], dayfirst=True, errors='coerce')
     df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
     df['Год'] = df['Дата'].dt.year
     
-    # Расчёт прибыли и рентабельности
     df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость без НДС']
     df['Рентабельность_%'] = (df['Валовая_прибыль'] / df['Сумма без НДС'] * 100).fillna(0)
     
-    # Переименуем для удобства
     df = df.rename(columns={
         'Сумма без НДС': 'Выручка_без_НДС',
         'Себестоимость без НДС': 'Себестоимость',
@@ -53,7 +50,6 @@ def load_sales_data():
         'Номенклатура': 'Номенклатура'
     })
     
-    # Обработка столбца 'Период.Месяц'
     df['Период.Месяц'] = pd.to_numeric(df['Период.Месяц'], errors='coerce')
     df = df.dropna(subset=['Период.Месяц'])
     df['Период.Месяц'] = df['Период.Месяц'].astype(int)
@@ -135,7 +131,6 @@ if page == "📈 Продажи":
     
     df_filtered = df_year[(df_year['Период.Месяц'] == selected_month_num) & (df_year['Контрагент'].isin(selected_customers))]
     
-    # Годовые метрики
     st.divider()
     st.subheader(f"📈 ИТОГИ ЗА {selected_year} ГОД")
     
@@ -156,7 +151,6 @@ if page == "📈 Продажи":
     
     st.divider()
     
-    # Помесячная разбивка
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
     monthly = df_year.groupby('Период.Месяц').agg({
@@ -212,7 +206,6 @@ if page == "📈 Продажи":
     
     st.divider()
     
-    # Топ-5 контрагентов
     st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ЗА {selected_year}")
     
     cust_rev = df_year.groupby('Контрагент')['Выручка_без_НДС'].sum().reset_index()
@@ -266,7 +259,6 @@ if page == "📈 Продажи":
     st.caption(f"📊 Топ-5: {format_number(total_top5)} ₽ ({format_float(total_top5/year_revenue*100,1)}% от общей выручки без НДС)")
     st.divider()
     
-    # Детали за месяц
     st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display} {selected_year}")
     
     m1, m2, m3, m4 = st.columns(4)
@@ -280,7 +272,6 @@ if page == "📈 Продажи":
     with m4:
         st.metric("📦 Продано (шт)", f"{format_number(df_filtered['Количество'].sum())}")
     
-    # Графики
     c1, c2 = st.columns(2)
     with c1:
         top10 = df_filtered.groupby('Контрагент')['Выручка_без_НДС'].sum().nlargest(10).reset_index()
@@ -299,7 +290,6 @@ if page == "📈 Продажи":
             fig2.update_layout(title='Выручка без НДС vs Валовая прибыль', barmode='group')
             st.plotly_chart(fig2, use_container_width=True)
     
-    # Таблица данных
     st.subheader("📋 Детальные данные")
     show_cols = ['Дата', 'Контрагент', 'Номенклатура', 'Выручка_без_НДС', 'Валовая_прибыль', 'Рентабельность_%', 'Количество']
     show_cols = [c for c in show_cols if c in df_filtered.columns]
@@ -342,7 +332,6 @@ elif page == "🚚 Логистика":
         # ==========================================
         df_log = logistics_df.copy()
         
-        # Преобразуем даты
         if 'Дата заказа' in df_log.columns:
             df_log['Дата'] = pd.to_datetime(df_log['Дата заказа'], errors='coerce')
         elif 'Дата отгрузки' in df_log.columns:
@@ -354,19 +343,16 @@ elif page == "🚚 Логистика":
         df_log['Месяц'] = df_log['Дата'].dt.month
         df_log['Месяц_название'] = df_log['Месяц'].map(month_names)
         
-        # Номер заказа = дата заказа (столбец I)
         if 'Дата заказа' in df_log.columns:
             df_log['Номер заказа'] = df_log['Дата заказа'].dt.strftime('%Y%m%d') if pd.api.types.is_datetime64_any_dtype(df_log['Дата заказа']) else df_log['Дата заказа'].astype(str)
         else:
             df_log['Номер заказа'] = df_log['Дата'].dt.strftime('%Y%m%d')
         
-        # Основные колонки для анализа
         df_log['План'] = pd.to_numeric(df_log['Плановая цена PLM'], errors='coerce')
         df_log['Факт'] = pd.to_numeric(df_log['Фактическая цена PLM'], errors='coerce')
         df_log['Доставка_до_PLM'] = pd.to_numeric(df_log['Доставка до PLM'], errors='coerce')
         df_log['Кол_во_паллет'] = pd.to_numeric(df_log['Кол-во паллет'], errors='coerce')
         
-        # Процент из столбца T (Доля по объему фактическому)
         percent_col = None
         for col in df_log.columns:
             if 'доля' in str(col).lower() and 'объем' in str(col).lower():
@@ -374,16 +360,11 @@ elif page == "🚚 Логистика":
                 break
         
         if percent_col:
-            # Данные в столбце T уже являются долей (например, 0.17424 = 17.424%)
-            # НЕ ДЕЛИМ НА 100!
             df_log['Процент_доставки'] = pd.to_numeric(df_log[percent_col], errors='coerce')
         else:
             df_log['Процент_доставки'] = 1.0
         
-        # Фактические затраты PLM на доставку SKU по заказу
         df_log['Затраты_PLM_на_SKU'] = df_log['Факт'] * df_log['Процент_доставки'].fillna(1)
-        
-        # Отклонение
         df_log['Отклонение'] = df_log['Факт'] - df_log['План']
         
         # ==========================================
@@ -395,7 +376,6 @@ elif page == "🚚 Логистика":
         # ВКЛАДКА 1: ОБЩАЯ АНАЛИТИКА
         # ==========================================
         with tab1:
-            # ФИЛЬТРЫ
             st.sidebar.header("🚚 Фильтры логистики")
             
             available_years = sorted(df_log['Год'].dropna().unique())
@@ -410,7 +390,6 @@ elif page == "🚚 Логистика":
             selected_month_display = st.sidebar.selectbox("Выберите месяц", available_months_display, key="log_month")
             selected_month_num = available_months[available_months_display.index(selected_month_display)]
             
-            # Города
             if 'Город' in df_year_log.columns:
                 all_cities = sorted(df_year_log['Город'].dropna().unique())
                 selected_cities = st.sidebar.multiselect(
@@ -422,13 +401,11 @@ elif page == "🚚 Логистика":
             else:
                 selected_cities = []
             
-            # Фильтруем данные
             mask = (df_year_log['Месяц'] == selected_month_num)
             if selected_cities:
                 mask = mask & (df_year_log['Город'].isin(selected_cities))
             df_filtered_log = df_year_log[mask]
             
-            # ГОДОВЫЕ МЕТРИКИ
             st.divider()
             st.subheader(f"📦 ИТОГИ ЛОГИСТИКИ ЗА {selected_year_log} ГОД")
             
@@ -463,13 +440,11 @@ elif page == "🚚 Логистика":
                 avg_pallet = year_fact / year_pallets if year_pallets > 0 else 0
                 st.metric("📦 Средняя цена паллеты", f"{format_number(avg_pallet)} ₽")
             
-            # Показатель "Затраты PLM на доставку SKU"
             year_sku_costs = df_year_log['Затраты_PLM_на_SKU'].sum()
             st.metric("🎯 Затраты PLM на доставку SKU (с учётом доли)", f"{format_number(year_sku_costs)} ₽")
             
             st.divider()
             
-            # ПОМЕСЯЧНАЯ РАЗБИВКА
             st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log} ГОД")
             
             monthly = df_year_log.groupby('Месяц').agg({
@@ -505,7 +480,6 @@ elif page == "🚚 Логистика":
             
             st.divider()
             
-            # ГРАФИКИ
             col1, col2 = st.columns(2)
             
             with col1:
@@ -537,7 +511,6 @@ elif page == "🚚 Логистика":
                               labels={'Отклонение': 'Отклонение (₽)', 'Название': 'Месяц'})
                 st.plotly_chart(fig3, use_container_width=True)
             
-            # ДЕТАЛИ ЗА ВЫБРАННЫЙ МЕСЯЦ
             st.divider()
             st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display} {selected_year_log}")
             
@@ -552,13 +525,12 @@ elif page == "🚚 Логистика":
             with d4:
                 st.metric("🎯 Затраты на SKU", f"{format_number(df_filtered_log['Затраты_PLM_на_SKU'].sum())} ₽")
         
-              # ==========================================
+        # ==========================================
         # ВКЛАДКА 2: ЛОГИСТИКА МЕСЯЦ+ГОРОД+SKU+ЗАКАЗ
         # ==========================================
         with tab2:
             st.subheader("📋 Детализация логистики по заказам")
             
-            # Фильтры для второй вкладки
             col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
             
             with col_filter1:
@@ -582,7 +554,6 @@ elif page == "🚚 Логистика":
                 skus_available = sorted(df_city_tab2['Номенклатура'].dropna().unique())
                 selected_sku_tab2 = st.selectbox("📦 SKU (Номенклатура)", skus_available, key="tab2_sku")
             
-            # Фильтруем данные по выбранным параметрам
             df_detail = df_log[
                 (df_log['Год'] == selected_year_tab2) &
                 (df_log['Месяц'] == selected_month_tab2) &
@@ -593,7 +564,6 @@ elif page == "🚚 Логистика":
             if df_detail.empty:
                 st.warning("Нет данных за выбранный период по указанному SKU")
             else:
-                # Группируем по номеру заказа
                 order_summary = df_detail.groupby('Номер заказа').agg({
                     'Затраты_PLM_на_SKU': 'sum',
                     'Кол_во_паллет': 'sum',
@@ -601,13 +571,11 @@ elif page == "🚚 Логистика":
                     'Факт': 'sum',
                     'План': 'sum'
                 }).reset_index()
-                
                 order_summary = order_summary.sort_values('Дата заказа', ascending=False)
                 
                 st.subheader(f"📊 Результаты для SKU: **{selected_sku_tab2}**")
                 st.caption(f"📍 Город: {selected_city_tab2} | 📅 {selected_month_display_tab2} {selected_year_tab2}")
                 
-                # Метрики
                 m1, m2, m3 = st.columns(3)
                 with m1:
                     total_orders = len(order_summary)
@@ -617,166 +585,4 @@ elif page == "🚚 Логистика":
                     st.metric("💰 Общие затраты PLM на доставку SKU", f"{format_number(total_cost)} ₽")
                 with m3:
                     avg_cost = total_cost / total_orders if total_orders > 0 else 0
-                    st.metric("📊 Средние затраты на заказ", f"{format_number(avg_cost)} ₽")
-                
-                st.divider()
-                
-                # Таблица с детализацией по заказам
-                st.subheader("📋 Детализация по номерам заказов")
-                
-                display_order = order_summary.copy()
-                display_order['Затраты_PLM_на_SKU'] = display_order['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
-                display_order['Факт'] = display_order['Факт'].apply(lambda x: f"{format_number(x)} ₽")
-                display_order['План'] = display_order['План'].apply(lambda x: f"{format_number(x)} ₽")
-                display_order['Кол_во_паллет'] = display_order['Кол_во_паллет'].apply(format_number)
-                
-                st.dataframe(
-                    display_order[['Номер заказа', 'Дата заказа', 'Кол_во_паллет', 'Факт', 'План', 'Затраты_PLM_на_SKU']],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Номер заказа": "Номер заказа",
-                        "Дата заказа": "Дата заказа",
-                        "Кол_во_паллет": "Кол-во паллет",
-                        "Факт": "Фактические затраты PLM",
-                        "План": "Плановые затраты PLM",
-                        "Затраты_PLM_на_SKU": "Затраты PLM на доставку SKU"
-                    }
-                )
-                
-                # График по заказам
-                if len(order_summary) > 1:
-                    st.subheader("📊 Динамика затрат по заказам")
-                    fig_orders = px.bar(order_summary, x='Номер заказа', y='Затраты_PLM_на_SKU',
-                                        title='Затраты PLM на доставку SKU по каждому заказу',
-                                        labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Номер заказа': 'Номер заказа'})
-                    st.plotly_chart(fig_orders, use_container_width=True)
-                
-                # Кнопка скачивания
-                csv_detail = order_summary[['Номер заказа', 'Дата заказа', 'Кол_во_паллет', 'Факт', 'План', 'Затраты_PLM_на_SKU']].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-                st.download_button(
-                    "📥 Скачать детализацию по заказам (CSV)",
-                    csv_detail,
-                    f"logistics_details_{selected_year_tab2}_{selected_month_tab2}_{selected_city_tab2}_{selected_sku_tab2}.csv",
-                    "text/csv"
-                )
-        
-        # ==========================================
-        # ВКЛАДКА 3: ЛОГИСТИКА МЕСЯЦ+ГОРОД+ЗАКАЗ
-        # ==========================================
-        with tab3:
-            st.subheader("📋 Сводка по заказу")
-            st.caption("Сумма всех 'Затраты PLM на доставку SKU' по выбранному заказу")
-            
-            # Фильтры для третьей вкладки
-            col_filter1, col_filter2, col_filter3, col_filter4 = st.columns(4)
-            
-            with col_filter1:
-                years_available = sorted(df_log['Год'].dropna().unique())
-                selected_year_tab3 = st.selectbox("📅 Год", years_available, key="tab3_year")
-            
-            with col_filter2:
-                df_year_tab3 = df_log[df_log['Год'] == selected_year_tab3]
-                months_available = sorted(df_year_tab3['Месяц'].dropna().unique())
-                months_display_tab3 = [month_names[m] for m in months_available]
-                selected_month_display_tab3 = st.selectbox("📅 Месяц", months_display_tab3, key="tab3_month")
-                selected_month_tab3 = months_available[months_display_tab3.index(selected_month_display_tab3)]
-            
-            with col_filter3:
-                df_month_tab3 = df_year_tab3[df_year_tab3['Месяц'] == selected_month_tab3]
-                cities_available = sorted(df_month_tab3['Город'].dropna().unique())
-                selected_city_tab3 = st.selectbox("🏙️ Город", cities_available, key="tab3_city")
-            
-            with col_filter4:
-                df_city_tab3 = df_month_tab3[df_month_tab3['Город'] == selected_city_tab3]
-                orders_available = sorted(df_city_tab3['Номер заказа'].dropna().unique(), reverse=True)
-                selected_order_tab3 = st.selectbox("📋 Номер заказа (дата)", orders_available, key="tab3_order")
-            
-            # Фильтруем данные по выбранным параметрам
-            df_order = df_log[
-                (df_log['Год'] == selected_year_tab3) &
-                (df_log['Месяц'] == selected_month_tab3) &
-                (df_log['Город'] == selected_city_tab3) &
-                (df_log['Номер заказа'] == selected_order_tab3)
-            ]
-            
-            if df_order.empty:
-                st.warning("Нет данных за выбранный период")
-            else:
-                # Получаем дату заказа для отображения
-                order_date = df_order['Дата заказа'].iloc[0] if 'Дата заказа' in df_order.columns else selected_order_tab3
-                
-                st.subheader(f"📊 Сводка по заказу **{selected_order_tab3}**")
-                st.caption(f"📍 Город: {selected_city_tab3} | 📅 {selected_month_display_tab3} {selected_year_tab3}")
-                
-                # Основные метрики по заказу
-                total_sku_cost = df_order['Затраты_PLM_на_SKU'].sum()
-                total_fact = df_order['Факт'].sum()
-                total_plan = df_order['План'].sum()
-                total_pallets = df_order['Кол_во_паллет'].sum()
-                unique_skus = df_order['Номенклатура'].nunique()
-                
-                m1, m2, m3, m4, m5 = st.columns(5)
-                with m1:
-                    st.metric("💰 Сумма затрат PLM на доставку SKU", f"{format_number(total_sku_cost)} ₽")
-                with m2:
-                    st.metric("📋 Фактические затраты PLM", f"{format_number(total_fact)} ₽")
-                with m3:
-                    st.metric("📊 Плановые затраты PLM", f"{format_number(total_plan)} ₽")
-                with m4:
-                    deviation = total_fact - total_plan
-                    st.metric("📉 Отклонение", f"{format_number(deviation)} ₽")
-                with m5:
-                    st.metric("📦 Кол-во паллет", f"{format_number(total_pallets)}")
-                
-                st.divider()
-                
-                # Детализация по SKU в этом заказе
-                st.subheader("📋 Детализация по SKU в заказе")
-                
-                sku_summary = df_order.groupby('Номенклатура').agg({
-                    'Затраты_PLM_на_SKU': 'sum',
-                    'Кол_во_паллет': 'sum',
-                    'Факт': 'sum',
-                    'План': 'sum'
-                }).reset_index()
-                
-                sku_summary = sku_summary.sort_values('Затраты_PLM_на_SKU', ascending=False)
-                
-                # Форматируем для отображения
-                display_sku = sku_summary.copy()
-                display_sku['Затраты_PLM_на_SKU'] = display_sku['Затраты_PLM_на_SKU'].apply(lambda x: f"{format_number(x)} ₽")
-                display_sku['Факт'] = display_sku['Факт'].apply(lambda x: f"{format_number(x)} ₽")
-                display_sku['План'] = display_sku['План'].apply(lambda x: f"{format_number(x)} ₽")
-                display_sku['Кол_во_паллет'] = display_sku['Кол_во_паллет'].apply(format_number)
-                
-                st.dataframe(
-                    display_sku,
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config={
-                        "Номенклатура": "SKU (Номенклатура)",
-                        "Затраты_PLM_на_SKU": "Затраты PLM на доставку SKU",
-                        "Факт": "Фактические затраты PLM",
-                        "План": "Плановые затраты PLM",
-                        "Кол_во_паллет": "Кол-во паллет"
-                    }
-                )
-                
-                # График: Затраты по SKU
-                if len(sku_summary) > 1:
-                    st.subheader("📊 Затраты PLM на доставку SKU по каждому SKU")
-                    fig_sku = px.bar(sku_summary, x='Номенклатура', y='Затраты_PLM_на_SKU',
-                                     title=f'Распределение затрат по SKU в заказе {selected_order_tab3}',
-                                     labels={'Затраты_PLM_на_SKU': 'Затраты (₽)', 'Номенклатура': 'SKU'})
-                    fig_sku.update_layout(xaxis_tickangle=-45)
-                    st.plotly_chart(fig_sku, use_container_width=True)
-                
-                # Кнопка скачивания
-                csv_order = sku_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-                st.download_button(
-                    "📥 Скачать детализацию по заказу (CSV)",
-                    csv_order,
-                    f"logistics_order_{selected_year_tab3}_{selected_month_tab3}_{selected_city_tab3}_{selected_order_tab3}.csv",
-                    "text/csv"
-                )
+                    st.metric("
