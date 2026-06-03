@@ -39,6 +39,7 @@ def load_sales_data():
     df['Дата'] = pd.to_datetime(df['Документ.Дата'], dayfirst=True, errors='coerce')
     df['Месяц'] = df['Дата'].dt.strftime('%Y-%m')
     df['Год'] = df['Дата'].dt.year
+    df['Месяц_цифра'] = df['Дата'].dt.month
     
     df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость без НДС']
     df['Рентабельность_%'] = (df['Валовая_прибыль'] / df['Сумма без НДС'] * 100).fillna(0)
@@ -100,7 +101,7 @@ st.set_page_config(page_title="BI Портал", layout="wide")
 st.sidebar.title("📊 Навигация")
 page = st.sidebar.radio(
     "Выберите раздел",
-    ["📈 Продажи", "🚚 Логистика"]
+    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости"]
 )
 
 # ==========================================
@@ -241,7 +242,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '<tr>'
+    html += '</td>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -906,3 +907,160 @@ elif page == "🚚 Логистика":
                     
                     csv_data = city_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
                     st.download_button("📥 Скачать сводку по городам (CSV)", csv_data, f"logistics_cities_summary_{selected_year_tab4}_{selected_month_tab4}.csv", "text/csv")
+
+# ==========================================
+# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ
+# ==========================================
+elif page == "📊 Анализ себестоимости":
+    st.title("📊 Анализ себестоимости продукции")
+    
+    st.markdown("""
+    ### Динамика себестоимости без НДС по номенклатурам
+    Графики сгруппированы по параметру из столбца **M** (Группа/категория).
+    """)
+    
+    # Подготовка данных
+    df_cost = sales_df.copy()
+    
+    # Создаём столбец для группировки (параметр из столбца M)
+    # В вашем файле это может быть 'Группа' или 'Подгруппа'
+    group_col = None
+    for col in df_cost.columns:
+        if col in ['Группа', 'Подгруппа', 'Категория']:
+            group_col = col
+            break
+    
+    if group_col is None:
+        st.warning("⚠️ Не найден столбец для группировки номенклатур (Группа, Подгруппа или Категория)")
+        group_col = 'Номенклатура'
+    
+    # Получаем список уникальных групп
+    unique_groups = df_cost[group_col].dropna().unique()
+    unique_groups = sorted(unique_groups)
+    
+    # Создаём временный столбец для сортировки дат
+    df_cost['Дата_сортировка'] = pd.to_datetime(df_cost['Дата'], errors='coerce')
+    df_cost['Период'] = df_cost['Дата_сортировка'].dt.strftime('%Y-%m')
+    
+    # Функция для форматирования дат на графиках
+    def format_date_axis(fig):
+        fig.update_xaxes(
+            tickangle=-45,
+            tickformat="%b %Y"
+        )
+        return fig
+    
+    # Выбор группы через выпадающий список
+    selected_group = st.selectbox(
+        "📂 Выберите группу номенклатур",
+        unique_groups,
+        help="Группировка по столбцу 'Группа' (или аналогичному)"
+    )
+    
+    # Фильтруем номенклатуры по выбранной группе
+    df_group = df_cost[df_cost[group_col] == selected_group]
+    
+    if df_group.empty:
+        st.warning(f"Нет данных для группы '{selected_group}'")
+    else:
+        # Получаем список номенклатур в выбранной группе
+        nomenclatures = sorted(df_group['Номенклатура'].dropna().unique())
+        
+        st.subheader(f"📦 Номенклатуры в группе: {selected_group}")
+        st.caption(f"Всего номенклатур в группе: {len(nomenclatures)}")
+        
+        # Для каждой номенклатуры строим отдельный график
+        for nomen in nomenclatures:
+            df_nomen = df_group[df_group['Номенклатура'] == nomen].copy()
+            
+            if df_nomen.empty:
+                continue
+            
+            # Группируем по месяцам
+            monthly_cost = df_nomen.groupby('Период')['Себестоимость'].mean().reset_index()
+            monthly_cost = monthly_cost.sort_values('Период')
+            
+            if monthly_cost.empty:
+                continue
+            
+            # Создаём график
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatter(
+                x=monthly_cost['Период'],
+                y=monthly_cost['Себестоимость'],
+                mode='lines+markers',
+                name=nomen,
+                line=dict(width=2, color='#2E86AB'),
+                marker=dict(size=6, color='#1A5276')
+            ))
+            
+            # Добавляем линию среднего значения
+            avg_cost = monthly_cost['Себестоимость'].mean()
+            fig.add_hline(
+                y=avg_cost,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Среднее: {format_number(avg_cost)} ₽",
+                annotation_position="top right"
+            )
+            
+            fig.update_layout(
+                title=f"📈 {nomen}",
+                xaxis_title="Период (месяц/год)",
+                yaxis_title="Себестоимость без НДС (₽)",
+                hovermode='x unified',
+                height=400,
+                margin=dict(l=50, r=50, t=60, b=50)
+            )
+            
+            fig.update_xaxes(tickangle=-45)
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Добавляем небольшую статистику под графиком
+            min_cost = monthly_cost['Себестоимость'].min()
+            max_cost = monthly_cost['Себестоимость'].max()
+            last_cost = monthly_cost['Себестоимость'].iloc[-1] if not monthly_cost.empty else 0
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Минимальная себестоимость", f"{format_number(min_cost)} ₽")
+            with col2:
+                st.metric("Максимальная себестоимость", f"{format_number(max_cost)} ₽")
+            with col3:
+                st.metric("Последнее значение", f"{format_number(last_cost)} ₽")
+            
+            st.divider()
+    
+    # Дополнительный блок: сводная таблица по всем номенклатурам группы
+    if not df_group.empty:
+        st.subheader(f"📊 Сводная таблица себестоимости по номенклатурам группы '{selected_group}'")
+        
+        # Сводная таблица: номенклатура → средняя себестоимость
+        summary_table = df_group.groupby('Номенклатура').agg({
+            'Себестоимость': ['mean', 'min', 'max', 'std']
+        }).round(2)
+        summary_table.columns = ['Средняя', 'Минимум', 'Максимум', 'Стд. отклонение']
+        summary_table = summary_table.sort_values('Средняя', ascending=False)
+        
+        # Форматируем
+        for col in summary_table.columns:
+            summary_table[col] = summary_table[col].apply(lambda x: format_number(x))
+        
+        st.dataframe(summary_table, use_container_width=True)
+        
+        # Кнопка скачивания
+        csv_summary = df_group.groupby('Номенклатура').agg({
+            'Себестоимость': ['mean', 'min', 'max', 'std']
+        }).round(2)
+        csv_summary.columns = ['Средняя', 'Минимум', 'Максимум', 'Стд_отклонение']
+        csv_summary = csv_summary.reset_index()
+        
+        csv_data = csv_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+        st.download_button(
+            "📥 Скачать сводную таблицу (CSV)",
+            csv_data,
+            f"cost_summary_{selected_group}.csv",
+            "text/csv"
+        )
