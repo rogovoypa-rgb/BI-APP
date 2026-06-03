@@ -242,7 +242,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</td>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -250,7 +250,7 @@ if page == "📈 Продажи":
         html += f'<td style="padding:6px; font-weight:bold">{fmt(row["Год"])} ₽</td>'
         for m in available_months_num:
             val = row[month_names[m]]
-            html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
+            html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</tr>'
         html += '</tr>'
     html += '</table>'
     
@@ -366,7 +366,6 @@ elif page == "🚚 Логистика":
         df_log['Затраты_PLM_на_SKU'] = df_log['Факт'] * df_log['Процент_доставки'].fillna(1)
         df_log['Отклонение'] = df_log['Факт'] - df_log['План']
         
-        # СТОИМОСТЬ ТОВАРА В ЗАКАЗЕ (столбец 25)
         if 'Стоимость товара в заказе' in df_log.columns:
             df_log['Стоимость_товара_в_заказе'] = pd.to_numeric(df_log['Стоимость товара в заказе'], errors='coerce')
         else:
@@ -379,7 +378,6 @@ elif page == "🚚 Логистика":
         with tab1:
             st.header("📦 Общая аналитика логистики")
             
-            # Фильтр по году (остаётся вверху)
             col_filter1 = st.columns(1)[0]
             with col_filter1:
                 available_years = sorted(df_log['Год'].dropna().unique())
@@ -387,10 +385,8 @@ elif page == "🚚 Логистика":
                     available_years = [2024]
                 selected_year_log = st.selectbox("📅 Выберите год", available_years, key="log_year")
             
-            # Фильтруем данные по году
             df_year_log = df_log[df_log['Год'] == selected_year_log]
             
-            # ГОДОВЫЕ МЕТРИКИ
             st.divider()
             st.subheader(f"📦 ИТОГИ ЛОГИСТИКИ ЗА {selected_year_log} ГОД")
             
@@ -429,7 +425,6 @@ elif page == "🚚 Логистика":
             
             st.divider()
             
-            # ПОМЕСЯЧНАЯ РАЗБИВКА
             st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log} ГОД")
             
             monthly = df_year_log.groupby('Месяц').agg({
@@ -465,7 +460,6 @@ elif page == "🚚 Логистика":
             
             st.divider()
             
-            # ГРАФИКИ (без фильтрации по месяцам и городам)
             col1, col2 = st.columns(2)
             
             with col1:
@@ -497,13 +491,9 @@ elif page == "🚚 Логистика":
                               labels={'Отклонение': 'Отклонение (₽)', 'Название': 'Месяц'})
                 st.plotly_chart(fig3, use_container_width=True)
             
-            # ==========================================
-            # ДЕТАЛИ ЗА МЕСЯЦ (с выбором месяца и города)
-            # ==========================================
             st.divider()
             st.subheader("📊 ДЕТАЛИ ЗА МЕСЯЦ")
             
-            # Фильтры для детализации
             col_filter2, col_filter3 = st.columns(2)
             
             with col_filter2:
@@ -525,13 +515,11 @@ elif page == "🚚 Логистика":
                 else:
                     selected_cities = []
             
-            # Фильтруем данные
             mask = (df_year_log['Месяц'] == selected_month_num)
             if selected_cities:
                 mask = mask & (df_year_log['Город'].isin(selected_cities))
             df_detail_month = df_year_log[mask]
             
-            # Метрики за выбранный месяц
             d1, d2, d3, d4 = st.columns(4)
             with d1:
                 st.metric("💰 Факт PLM", f"{format_number(df_detail_month['Факт'].sum())} ₽")
@@ -543,7 +531,6 @@ elif page == "🚚 Логистика":
             with d4:
                 st.metric("🎯 Затраты на SKU", f"{format_number(df_detail_month['Затраты_PLM_на_SKU'].sum())} ₽")
             
-            # Таблица детализации по заказам за выбранный месяц и город
             if not df_detail_month.empty:
                 st.subheader("📋 Детализация по заказам")
                 
@@ -788,7 +775,6 @@ elif page == "🚚 Логистика":
                 st.warning("Нет данных за выбранный период")
             else:
                 if selected_city_tab4 != "Все города":
-                    # Группируем по заказам для конкретного города
                     order_summary = df_filtered_tab4.groupby('Номер заказа').agg({
                         'Затраты_PLM_на_SKU': 'sum',
                         'Стоимость_товара_в_заказе': 'sum',
@@ -845,7 +831,6 @@ elif page == "🚚 Логистика":
                     st.download_button("📥 Скачать данные по городу (CSV)", csv_data, f"logistics_city_{selected_year_tab4}_{selected_month_tab4}_{selected_city_tab4}.csv", "text/csv")
                 
                 else:
-                    # Сводка по всем городам
                     city_summary = df_filtered_tab4.groupby('Город').agg({
                         'Затраты_PLM_на_SKU': 'sum',
                         'Стоимость_товара_в_заказе': 'sum',
@@ -990,18 +975,24 @@ elif page == "📊 Анализ себестоимости":
             col_filter1, col_filter2 = st.columns(2)
             
             with col_filter1:
+                period_options = ["За всё время", "Текущий год", "Прошлый год", "Текущий и прошлый год"]
+                default_index = period_options.index("Текущий и прошлый год")
                 period_filter = st.selectbox(
                     "📅 Период",
-                    ["За всё время", "Текущий год", "Прошлый год", "Текущий и прошлый год"],
+                    period_options,
+                    index=default_index,
                     help="Ограничить период отображаемых данных"
                 )
             
             with col_filter2:
+                sort_options = ["По убыванию средней себестоимости", "По возрастанию средней себестоимости", 
+                                "По стандартному отклонению (от наибольшего)", "По стандартному отклонению (от наименьшего)",
+                                "По подкатегории", "По категории", "По группе", "По номенклатуре"]
+                default_sort_index = sort_options.index("По стандартному отклонению (от наибольшего)")
                 sort_by = st.selectbox(
                     "📊 Сортировка графиков",
-                    ["По убыванию средней себестоимости", "По возрастанию средней себестоимости", 
-                     "По стандартному отклонению (от наибольшего)", "По стандартному отклонению (от наименьшего)",
-                     "По подкатегории", "По категории", "По группе", "По номенклатуре"],
+                    sort_options,
+                    index=default_sort_index,
                     help="Порядок вывода графиков сверху вниз"
                 )
             
@@ -1046,13 +1037,10 @@ elif page == "📊 Анализ себестоимости":
             for nomen in nomenclatures:
                 df_nomen = df_cost_filtered[df_cost_filtered['Номенклатура'] == nomen]
                 if not df_nomen.empty:
-                    # Группируем по периодам с русскими названиями
                     monthly_data = df_nomen.groupby('Период')['Себестоимость_единицы'].mean()
-                    # Сортируем по периоду (для корректного порядка)
                     monthly_data = monthly_data.sort_index()
                     
                     if not monthly_data.empty:
-                        # Создаём список периодов с русскими названиями в том же порядке
                         periods_sorted = monthly_data.index.tolist()
                         periods_ru = []
                         for p in periods_sorted:
@@ -1104,7 +1092,7 @@ elif page == "📊 Анализ себестоимости":
             elif sort_by == "По группе":
                 nomen_stats.sort(key=lambda x: x['Группа'])
                 sort_caption = "по группе"
-            else:  # По номенклатуре
+            else:
                 nomen_stats.sort(key=lambda x: x['Номенклатура'])
                 sort_caption = "по наименованию"
             
@@ -1119,7 +1107,6 @@ elif page == "📊 Анализ себестоимости":
                 periods = stat['Периоды']
                 costs = stat['Данные']
                 
-                # Создаём колонки: слева статистика (30%), справа график (70%)
                 col_left, col_right = st.columns([0.3, 0.7])
                 
                 with col_left:
@@ -1145,7 +1132,6 @@ elif page == "📊 Анализ себестоимости":
                     """, unsafe_allow_html=True)
                 
                 with col_right:
-                    # Создаём график
                     fig = go.Figure()
                     
                     fig.add_trace(go.Scatter(
@@ -1157,7 +1143,6 @@ elif page == "📊 Анализ себестоимости":
                         showlegend=False
                     ))
                     
-                    # Добавляем линию среднего значения
                     fig.add_hline(
                         y=stat['Средняя'],
                         line_dash="dash",
@@ -1186,7 +1171,6 @@ elif page == "📊 Анализ себестоимости":
             st.subheader(f"📊 Сводная таблица себестоимости единицы по номенклатурам группы '{selected_group}'")
             st.caption(f"{period_caption}")
             
-            # Сводная таблица с учётом сортировки
             summary_data = []
             for stat in nomen_stats:
                 summary_data.append({
@@ -1202,7 +1186,6 @@ elif page == "📊 Анализ себестоимости":
             
             summary_df = pd.DataFrame(summary_data)
             if not summary_df.empty:
-                # Форматируем
                 display_summary = summary_df.copy()
                 for col in ['Средняя себестоимость ед.', 'Стд. отклонение', 'Максимум', 'Минимум', 'Последнее']:
                     if col in display_summary.columns:
@@ -1210,7 +1193,6 @@ elif page == "📊 Анализ себестоимости":
                 
                 st.dataframe(display_summary, use_container_width=True, hide_index=True)
                 
-                # Кнопка скачивания
                 csv_summary = summary_df.copy()
                 for col in ['Средняя себестоимость ед.', 'Стд. отклонение', 'Максимум', 'Минимум', 'Последнее']:
                     if col in csv_summary.columns:
