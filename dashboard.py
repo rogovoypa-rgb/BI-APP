@@ -924,8 +924,16 @@ elif page == "📊 Анализ себестоимости":
     
     # Создаём временный столбец для сортировки дат
     df_cost['Дата_сортировка'] = pd.to_datetime(df_cost['Дата'], errors='coerce')
-    df_cost['Период'] = df_cost['Дата_сортировка'].dt.strftime('%Y-%m')
+    
+    # Создаём столбец с русскими названиями месяцев
+    month_names_ru = {
+        1: 'Янв', 2: 'Фев', 3: 'Мар', 4: 'Апр', 5: 'Май', 6: 'Июн',
+        7: 'Июл', 8: 'Авг', 9: 'Сен', 10: 'Окт', 11: 'Ноя', 12: 'Дек'
+    }
+    df_cost['Месяц_рус'] = df_cost['Дата_сортировка'].dt.month.map(month_names_ru)
     df_cost['Год'] = df_cost['Дата_сортировка'].dt.year
+    df_cost['Период'] = df_cost['Дата_сортировка'].dt.strftime('%Y-%m')
+    df_cost['Период_рус'] = df_cost['Дата_сортировка'].dt.strftime('%Y') + ' ' + df_cost['Месяц_рус']
     
     # Убираем дубликаты столбцов, если они есть
     df_cost = df_cost.loc[:, ~df_cost.columns.duplicated()]
@@ -1038,10 +1046,13 @@ elif page == "📊 Анализ себестоимости":
             for nomen in nomenclatures:
                 df_nomen = df_cost_filtered[df_cost_filtered['Номенклатура'] == nomen]
                 if not df_nomen.empty:
-                    monthly_data = df_nomen.groupby('Период')['Себестоимость_единицы'].mean()
-                    if not monthly_data.empty:
-                        avg = monthly_data.mean()
-                        std = monthly_data.std() if len(monthly_data) > 1 else 0
+                    # Группируем по периодам с русскими названиями
+                    monthly_data = df_nomen.groupby('Период_рус')['Себестоимость_единицы'].mean()
+                    monthly_data_sorted = monthly_data.sort_index()
+                    
+                    if not monthly_data_sorted.empty:
+                        avg = monthly_data_sorted.mean()
+                        std = monthly_data_sorted.std() if len(monthly_data_sorted) > 1 else 0
                         
                         subcat = df_nomen['Подкатегория'].iloc[0] if 'Подкатегория' in df_nomen.columns else ''
                         category = df_nomen['Категория'].iloc[0] if 'Категория' in df_nomen.columns else ''
@@ -1054,10 +1065,10 @@ elif page == "📊 Анализ себестоимости":
                             'Подкатегория': subcat,
                             'Категория': category,
                             'Группа': nomen_group,
-                            'Максимум': monthly_data.max(),
-                            'Минимум': monthly_data.min(),
-                            'Последнее': monthly_data.iloc[-1] if len(monthly_data) > 0 else 0,
-                            'Данные': monthly_data
+                            'Максимум': monthly_data_sorted.max(),
+                            'Минимум': monthly_data_sorted.min(),
+                            'Последнее': monthly_data_sorted.iloc[-1] if len(monthly_data_sorted) > 0 else 0,
+                            'Данные': monthly_data_sorted
                         })
             
             # Сортируем номенклатуры по выбранному критерию
@@ -1129,16 +1140,16 @@ elif page == "📊 Анализ себестоимости":
                     """, unsafe_allow_html=True)
                 
                 with col_right:
-                    # Создаём график
+                    # Создаём график (без названия номенклатуры в заголовке)
                     fig = go.Figure()
                     
                     fig.add_trace(go.Scatter(
                         x=periods,
                         y=costs,
                         mode='lines+markers',
-                        name=str(nomen),
                         line=dict(width=2, color='#2E86AB'),
-                        marker=dict(size=6, color='#1A5276')
+                        marker=dict(size=6, color='#1A5276'),
+                        showlegend=False
                     ))
                     
                     # Добавляем линию среднего значения
@@ -1151,12 +1162,12 @@ elif page == "📊 Анализ себестоимости":
                     )
                     
                     fig.update_layout(
-                        title=f"📈 {nomen}",
+                        title="",  # Убираем заголовок графика, так как номенклатура уже есть слева
                         xaxis_title="Период (месяц/год)",
                         yaxis_title="Себестоимость без НДС на единицу (₽/ед.)",
                         hovermode='x unified',
                         height=350,
-                        margin=dict(l=40, r=40, t=50, b=40)
+                        margin=dict(l=40, r=40, t=30, b=40)
                     )
                     
                     fig.update_xaxes(tickangle=-45)
@@ -1166,7 +1177,7 @@ elif page == "📊 Анализ себестоимости":
                 st.divider()
         
         # Дополнительный блок: сводная таблица по всем номенклатурам группы
-        if 'df_cost_filtered' in locals() and not df_cost_filtered.empty:
+        if 'df_cost_filtered' in locals() and not df_cost_filtered.empty and len(nomen_stats) > 0:
             st.subheader(f"📊 Сводная таблица себестоимости единицы по номенклатурам группы '{selected_group}'")
             st.caption(f"{period_caption}")
             
