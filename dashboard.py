@@ -915,7 +915,9 @@ elif page == "📊 Анализ себестоимости":
     st.title("📊 Анализ себестоимости продукции")
     
     st.markdown("""
-    ### Динамика себестоимости без НДС по номенклатурам
+    ### Динамика себестоимости без НДС на единицу продукции
+    **Формула:** Себестоимость без НДС (столбец T) / Количество (столбец O)
+    
     Графики сгруппированы по параметру из столбца **M** (Группа/категория).
     """)
     
@@ -927,11 +929,15 @@ elif page == "📊 Анализ себестоимости":
     df_cost['Период'] = df_cost['Дата_сортировка'].dt.strftime('%Y-%m')
     
     # Убираем дубликаты столбцов, если они есть
-    # Переименовываем дублирующиеся столбцы
     df_cost = df_cost.loc[:, ~df_cost.columns.duplicated()]
     
+    # Рассчитываем себестоимость на единицу продукции
+    # Себестоимость без НДС (столбец T) / Количество (столбец O)
+    df_cost['Себестоимость_единицы'] = df_cost['Себестоимость'] / df_cost['Количество']
+    # Заменяем бесконечность и NaN на 0
+    df_cost['Себестоимость_единицы'] = df_cost['Себестоимость_единицы'].replace([float('inf'), -float('inf')], 0).fillna(0)
+    
     # Создаём столбец для группировки (параметр из столбца M)
-    # В вашем файле это может быть 'Группа' или 'Подгруппа'
     group_col = None
     possible_group_cols = ['Группа', 'Подгруппа', 'Категория', 'Группа товаров', 'Категория товара']
     
@@ -986,8 +992,8 @@ elif page == "📊 Анализ себестоимости":
                 if df_nomen.empty:
                     continue
                 
-                # Группируем по месяцам (периодам)
-                monthly_cost = df_nomen.groupby('Период', as_index=False)['Себестоимость'].mean()
+                # Группируем по месяцам (периодам) - берём среднюю себестоимость единицы
+                monthly_cost = df_nomen.groupby('Период', as_index=False)['Себестоимость_единицы'].mean()
                 monthly_cost = monthly_cost.sort_values('Период')
                 
                 if monthly_cost.empty:
@@ -995,7 +1001,7 @@ elif page == "📊 Анализ себестоимости":
                 
                 # Получаем данные для графика
                 periods = monthly_cost['Период'].tolist()
-                costs = monthly_cost['Себестоимость'].tolist()
+                costs = monthly_cost['Себестоимость_единицы'].tolist()
                 
                 # Создаём график
                 fig = go.Figure()
@@ -1010,19 +1016,19 @@ elif page == "📊 Анализ себестоимости":
                 ))
                 
                 # Добавляем линию среднего значения
-                avg_cost = monthly_cost['Себестоимость'].mean()
+                avg_cost = monthly_cost['Себестоимость_единицы'].mean()
                 fig.add_hline(
                     y=avg_cost,
                     line_dash="dash",
                     line_color="red",
-                    annotation_text=f"Среднее: {format_number(avg_cost)} ₽",
+                    annotation_text=f"Среднее: {format_number(avg_cost)} ₽/ед.",
                     annotation_position="top right"
                 )
                 
                 fig.update_layout(
                     title=f"📈 {nomen}",
                     xaxis_title="Период (месяц/год)",
-                    yaxis_title="Себестоимость без НДС (₽)",
+                    yaxis_title="Себестоимость без НДС на единицу (₽/ед.)",
                     hovermode='x unified',
                     height=400,
                     margin=dict(l=50, r=50, t=60, b=50)
@@ -1033,26 +1039,26 @@ elif page == "📊 Анализ себестоимости":
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Добавляем небольшую статистику под графиком
-                min_cost = monthly_cost['Себестоимость'].min()
-                max_cost = monthly_cost['Себестоимость'].max()
-                last_cost = monthly_cost['Себестоимость'].iloc[-1] if len(monthly_cost) > 0 else 0
+                min_cost = monthly_cost['Себестоимость_единицы'].min()
+                max_cost = monthly_cost['Себестоимость_единицы'].max()
+                last_cost = monthly_cost['Себестоимость_единицы'].iloc[-1] if len(monthly_cost) > 0 else 0
                 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Минимальная себестоимость", f"{format_number(min_cost)} ₽")
+                    st.metric("Минимальная себестоимость ед.", f"{format_number(min_cost)} ₽/ед.")
                 with col2:
-                    st.metric("Максимальная себестоимость", f"{format_number(max_cost)} ₽")
+                    st.metric("Максимальная себестоимость ед.", f"{format_number(max_cost)} ₽/ед.")
                 with col3:
-                    st.metric("Последнее значение", f"{format_number(last_cost)} ₽")
+                    st.metric("Последнее значение", f"{format_number(last_cost)} ₽/ед.")
                 
                 st.divider()
         
         # Дополнительный блок: сводная таблица по всем номенклатурам группы
         if not df_group.empty:
-            st.subheader(f"📊 Сводная таблица себестоимости по номенклатурам группы '{selected_group}'")
+            st.subheader(f"📊 Сводная таблица себестоимости единицы по номенклатурам группы '{selected_group}'")
             
-            # Сводная таблица: номенклатура → средняя себестоимость
-            summary_data = df_group.groupby('Номенклатура')['Себестоимость'].agg(['mean', 'min', 'max', 'std']).reset_index()
+            # Сводная таблица: номенклатура → средняя себестоимость единицы
+            summary_data = df_group.groupby('Номенклатура')['Себестоимость_единицы'].agg(['mean', 'min', 'max', 'std']).reset_index()
             summary_data.columns = ['Номенклатура', 'Средняя', 'Минимум', 'Максимум', 'Стд_отклонение']
             summary_data = summary_data.sort_values('Средняя', ascending=False)
             
@@ -1072,6 +1078,6 @@ elif page == "📊 Анализ себестоимости":
             st.download_button(
                 "📥 Скачать сводную таблицу (CSV)",
                 csv_data,
-                f"cost_summary_{selected_group}.csv",
+                f"cost_per_unit_summary_{selected_group}.csv",
                 "text/csv"
             )
