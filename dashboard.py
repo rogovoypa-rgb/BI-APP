@@ -110,10 +110,11 @@ page = st.sidebar.radio(
 if page == "📈 Продажи":
     st.title("📊 BI Портал аналитики продаж")
     
-    # Получаем доступные годы
+    # Получаем доступные годы (преобразуем в целые числа)
     available_years = sorted(sales_df['Год'].dropna().unique())
-    if len(available_years) == 0:
-        available_years = [2024]
+    available_years_int = [int(y) for y in available_years]
+    if len(available_years_int) == 0:
+        available_years_int = [2024]
     
     # ФИЛЬТРЫ В ОСНОВНОЙ ОБЛАСТИ (под заголовком)
     st.divider()
@@ -121,7 +122,7 @@ if page == "📈 Продажи":
     col_filter_year, col_filter_month, col_filter_customer = st.columns([1, 1, 2])
     
     with col_filter_year:
-        selected_year = st.selectbox("📅 Выберите год", available_years)
+        selected_year = st.selectbox("📅 Выберите год", available_years_int)
     
     # Фильтруем данные по году для получения доступных месяцев
     df_year = sales_df[sales_df['Год'] == selected_year]
@@ -253,7 +254,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</tr>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -321,7 +322,6 @@ if page == "📈 Продажи":
         st.warning("Нет данных")
     
     st.caption(f"📅 {selected_month_display} {selected_year} | Записей: {format_number(len(df_filtered))}")
-
 # ==========================================
 # СТРАНИЦА 2: ЛОГИСТИКА
 # ==========================================
