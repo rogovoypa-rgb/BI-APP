@@ -116,33 +116,17 @@ if page == "📈 Продажи":
     if len(available_years_int) == 0:
         available_years_int = [2024]
     
-    # ФИЛЬТРЫ В ОСНОВНОЙ ОБЛАСТИ (под заголовком)
+    # ФИЛЬТР ГОДА В ВЕРХНЕЙ ЧАСТИ
     st.divider()
     
-    col_filter_year, col_filter_month, col_filter_customer = st.columns([1, 1, 2])
-    
+    col_filter_year = st.columns([1])[0]
     with col_filter_year:
         selected_year = st.selectbox("📅 Выберите год", available_years_int)
     
-    # Фильтруем данные по году для получения доступных месяцев
+    # Фильтруем данные по году
     df_year = sales_df[sales_df['Год'] == selected_year]
     available_months_num = sorted(df_year['Период.Месяц'].unique())
     available_months_display = [month_names[m] for m in available_months_num]
-    
-    with col_filter_month:
-        selected_month_display = st.selectbox("📅 Выберите месяц", available_months_display)
-        selected_month_num = available_months_num[available_months_display.index(selected_month_display)]
-    
-    with col_filter_customer:
-        all_customers = sorted(df_year['Контрагент'].dropna().unique())
-        selected_customers = st.multiselect(
-            "🏢 Выберите контрагентов",
-            all_customers,
-            default=all_customers[:5] if len(all_customers) > 5 else all_customers
-        )
-    
-    # Применяем фильтры для детального просмотра
-    df_filtered = df_year[(df_year['Период.Месяц'] == selected_month_num) & (df_year['Контрагент'].isin(selected_customers))]
     
     st.divider()
     st.subheader(f"📈 ИТОГИ ЗА {selected_year} ГОД")
@@ -272,6 +256,29 @@ if page == "📈 Продажи":
     st.caption(f"📊 Топ-5: {format_number(total_top5)} ₽ ({format_float(total_top5/year_revenue*100,1)}% от общей выручки без НДС)")
     st.divider()
     
+    # ==========================================
+    # ФИЛЬТРЫ МЕСЯЦА И КОНТРАГЕНТОВ (ПЕРЕД ДЕТАЛЯМИ)
+    # ==========================================
+    st.subheader("🔽 ВЫБЕРИТЕ ПАРАМЕТРЫ ДЛЯ ДЕТАЛИЗАЦИИ")
+    
+    col_filter_month, col_filter_customer = st.columns(2)
+    
+    with col_filter_month:
+        selected_month_display = st.selectbox("📅 Выберите месяц", available_months_display)
+        selected_month_num = available_months_num[available_months_display.index(selected_month_display)]
+    
+    with col_filter_customer:
+        all_customers = sorted(df_year['Контрагент'].dropna().unique())
+        selected_customers = st.multiselect(
+            "🏢 Выберите контрагентов",
+            all_customers,
+            default=all_customers[:5] if len(all_customers) > 5 else all_customers
+        )
+    
+    # Применяем фильтры для детального просмотра
+    df_filtered = df_year[(df_year['Период.Месяц'] == selected_month_num) & (df_year['Контрагент'].isin(selected_customers))]
+    
+    st.divider()
     st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display} {selected_year}")
     
     m1, m2, m3, m4 = st.columns(4)
