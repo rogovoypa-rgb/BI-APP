@@ -1657,3 +1657,183 @@ elif page == "🏭 Формирование себестоимости ПФ":
                                            barmode='group',
                                            xaxis_tickangle=-45)
                     st.plotly_chart(fig_comp, use_container_width=True)
+# ==========================================
+# СТРАНИЦА 5: ЛОГИСТИКА UPDATE
+# ==========================================
+elif page == "🚚 Логистика Update":
+    st.title("🚚 Аналитика логистики (обновленная)")
+    st.markdown("### Данные по доставке от КЗ до PLM и от PLM до РЦ")
+    
+    # ВРЕМЕННАЯ ДИАГНОСТИКА
+    with st.expander("🔧 Диагностика загрузки файла"):
+        import os
+        st.write("Файлы в папке:", [f for f in os.listdir('.') if f.endswith('.xlsx')])
+        
+        try:
+            df_test = pd.read_excel('BI logisticks.xlsx', header=0)
+            st.write(f"Стандартное чтение: {len(df_test)} строк, {len(df_test.columns)} столбцов")
+            st.write(f"После удаления пустых строк: {df_test.dropna(how='all').shape[0]} строк")
+            if 'Город' in df_test.columns:
+                st.write(f"Строк с городом: {df_test[df_test['Город'].notna()].shape[0]}")
+                st.write("Примеры городов:", df_test['Город'].dropna().unique()[:5])
+        except Exception as e:
+            st.error(f"Ошибка: {e}")
+        
+        st.write(f"Итоговый DataFrame: {logistics_update_df.shape[0]} строк")
+        if not logistics_update_df.empty:
+            st.write("Первые 3 строки:")
+            st.dataframe(logistics_update_df.head(3))
+    
+    if logistics_update_df.empty:
+        st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден или не удалось загрузить данные.")
+        st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
+    else:
+        # ==========================================
+        # ФИЛЬТРЫ
+        # ==========================================
+        st.divider()
+        
+        col_filter1, col_filter2, col_filter3 = st.columns(3)
+        
+        with col_filter1:
+            available_years = sorted(logistics_update_df['Год'].dropna().unique())
+            if len(available_years) == 0:
+                available_years = [2024]
+            selected_year_log_upd = st.selectbox("📅 Выберите год", available_years, key="log_upd_year")
+        
+        with col_filter2:
+            df_year_log_upd = logistics_update_df[logistics_update_df['Год'] == selected_year_log_upd]
+            available_months = sorted(df_year_log_upd['Месяц'].dropna().unique())
+            available_months_display = [month_names[m] for m in available_months]
+            selected_month_display_log_upd = st.selectbox("📅 Выберите месяц", available_months_display, key="log_upd_month")
+            selected_month_log_upd = available_months[available_months_display.index(selected_month_display_log_upd)]
+        
+        with col_filter3:
+            df_month_log_upd = df_year_log_upd[df_year_log_upd['Месяц'] == selected_month_log_upd]
+            if 'Город' in df_month_log_upd.columns:
+                all_cities = sorted(df_month_log_upd['Город'].dropna().unique())
+                selected_cities_log_upd = st.multiselect(
+                    "🏙️ Выберите города",
+                    all_cities,
+                    default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+                    key="log_upd_cities"
+                )
+            else:
+                selected_cities_log_upd = []
+        
+        # Фильтруем данные
+        mask = (logistics_update_df['Год'] == selected_year_log_upd) & (logistics_update_df['Месяц'] == selected_month_log_upd)
+        if selected_cities_log_upd:
+            mask = mask & (logistics_update_df['Город'].isin(selected_cities_log_upd))
+        df_filtered_log_upd = logistics_update_df[mask]
+        
+        # ==========================================
+        # ОСНОВНЫЕ МЕТРИКИ
+        # ==========================================
+        st.divider()
+        st.subheader(f"📊 ИТОГИ ЛОГИСТИКИ ЗА {selected_month_display_log_upd} {selected_year_log_upd}")
+        
+        total_plm_to_rc = df_filtered_log_upd['Сумма_PLM_до_PЦ'].sum()
+        total_kz_to_plm = df_filtered_log_upd['Сумма_КЗ_до_PLM'].sum()
+        total_delivery = total_plm_to_rc + total_kz_to_plm
+        total_pallets = df_filtered_log_upd['Кол-во паллет в заказе'].sum()
+        total_orders = len(df_filtered_log_upd)
+        
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("🚛 Доставка КЗ→PLM", f"{format_number(total_kz_to_plm)} ₽")
+        with c2:
+            st.metric("📦 Доставка PLM→РЦ", f"{format_number(total_plm_to_rc)} ₽")
+        with c3:
+            st.metric("💰 Итого логистика", f"{format_number(total_delivery)} ₽")
+        with c4:
+            st.metric("📦 Кол-во паллет", f"{format_number(total_pallets)}")
+        with c5:
+            st.metric("📋 Кол-во заказов", f"{format_number(total_orders)}")
+        
+        avg_cost_per_pallet = total_delivery / total_pallets if total_pallets > 0 else 0
+        st.metric("📊 Средняя стоимость паллеты", f"{format_number(avg_cost_per_pallet)} ₽/паллета")
+        
+        st.divider()
+        
+        # ==========================================
+        # ПОМЕСЯЧНАЯ РАЗБИВКА
+        # ==========================================
+        st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log_upd} ГОД")
+        
+        monthly_log_upd = logistics_update_df[logistics_update_df['Год'] == selected_year_log_upd].groupby('Месяц').agg({
+            'Сумма_PLM_до_PЦ': 'sum',
+            'Сумма_КЗ_до_PLM': 'sum',
+            'Кол-во паллет в заказе': 'sum'
+        }).reset_index()
+        monthly_log_upd['Название'] = monthly_log_upd['Месяц'].map(month_names)
+        monthly_log_upd['Итого'] = monthly_log_upd['Сумма_PLM_до_PЦ'] + monthly_log_upd['Сумма_КЗ_до_PLM']
+        monthly_log_upd = monthly_log_upd.sort_values('Месяц')
+        
+        for _, row in monthly_log_upd.iterrows():
+            cols = st.columns([1.5, 1, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"**{row['Название']}**")
+            with cols[1]:
+                st.metric("КЗ→PLM", f"{format_number(row['Сумма_КЗ_до_PLM'])} ₽", label_visibility="collapsed")
+            with cols[2]:
+                st.metric("PLM→РЦ", f"{format_number(row['Сумма_PLM_до_PЦ'])} ₽", label_visibility="collapsed")
+            with cols[3]:
+                st.metric("Итого", f"{format_number(row['Итого'])} ₽", label_visibility="collapsed")
+            with cols[4]:
+                st.metric("Паллет", format_number(row['Кол-во паллет в заказе']), label_visibility="collapsed")
+        
+        st.divider()
+        
+        # ==========================================
+        # ГРАФИКИ
+        # ==========================================
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if selected_cities_log_upd and 'Город' in df_filtered_log_upd.columns:
+                city_costs = df_filtered_log_upd.groupby('Город')['Сумма_PLM_до_PЦ'].sum().nlargest(10).reset_index()
+                if not city_costs.empty:
+                    fig = px.bar(city_costs, x='Сумма_PLM_до_PЦ', y='Город', orientation='h',
+                                 title='Топ городов по затратам PLM→РЦ',
+                                 color='Сумма_PLM_до_PЦ', color_continuous_scale='Blues',
+                                 labels={'Сумма_PLM_до_PЦ': 'Затраты (₽)', 'Город': ''})
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            if not monthly_log_upd.empty:
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(name='КЗ→PLM', x=monthly_log_upd['Название'], y=monthly_log_upd['Сумма_КЗ_до_PLM'], marker_color='#2E86AB'))
+                fig2.add_trace(go.Bar(name='PLM→РЦ', x=monthly_log_upd['Название'], y=monthly_log_upd['Сумма_PLM_до_PЦ'], marker_color='#52B788'))
+                fig2.update_layout(title='Структура затрат на логистику по месяцам',
+                                   xaxis_title='Месяц',
+                                   yaxis_title='Затраты (₽)',
+                                   barmode='stack')
+                st.plotly_chart(fig2, use_container_width=True)
+        
+        # ==========================================
+        # ДЕТАЛИ ЗА ВЫБРАННЫЙ МЕСЯЦ
+        # ==========================================
+        st.divider()
+        st.subheader(f"📋 ДЕТАЛИ ЗА {selected_month_display_log_upd} {selected_year_log_upd}")
+        
+        if not df_filtered_log_upd.empty:
+            display_cols = ['Дата отгрузки', 'Город', 'Кол-во паллет в заказе', 
+                           'Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС',
+                           'Итого доставка заказа от PLM до РЦ в т.ч. НДС']
+            display_cols = [c for c in display_cols if c in df_filtered_log_upd.columns]
+            
+            df_display_upd = df_filtered_log_upd[display_cols].copy()
+            for col in display_cols:
+                if 'Цена' in col or 'Итого' in col:
+                    if col in df_display_upd.columns:
+                        df_display_upd[col] = df_display_upd[col].apply(lambda x: f"{format_number(x)} ₽" if pd.notna(x) else "0 ₽")
+            
+            st.dataframe(df_display_upd.head(100), use_container_width=True)
+            
+            csv_upd = df_filtered_log_upd[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+            st.download_button("📥 Скачать данные (CSV)", csv_upd, f"logistics_update_{selected_year_log_upd}_{selected_month_log_upd}.csv", "text/csv")
+        else:
+            st.info("Нет данных за выбранный период")
+        
+        st.caption(f"📅 {selected_month_display_log_upd} {selected_year_log_upd} | Записей: {len(df_filtered_log_upd)}")
