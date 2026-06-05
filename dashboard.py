@@ -1659,3 +1659,283 @@ File "/home/adminuser/venv/lib/python3.14/site-packages/pandas/core/series.py", 
     loc = self.index.get_loc(label)
 File "/home/adminuser/venv/lib/python3.14/site-packages/pandas/core/indexes/base.py", line 3648, in get_loc
     raise KeyError(key) from err
+# ==========================================
+# СТРАНИЦА 5: ЛОГИСТИКА UPDATE
+# ==========================================
+elif page == "🚚 Логистика Update":
+    st.title("🚚 Аналитика логистики (обновленная)")
+    st.markdown("### Данные по доставке от КЗ до PLM и от PLM до РЦ")
+    
+    if logistics_update_df.empty:
+        st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден или не удалось загрузить данные.")
+    else:
+        # ФИЛЬТРЫ
+        st.divider()
+        
+        col_filter1, col_filter2, col_filter3 = st.columns(3)
+        
+        with col_filter1:
+            available_years = sorted(logistics_update_df['Год'].dropna().unique())
+            available_years_int = [int(y) for y in available_years]
+            if len(available_years_int) == 0:
+                available_years_int = [2025]
+            selected_year = st.selectbox("📅 Выберите год", available_years_int, key="lu_year")
+        
+        with col_filter2:
+            df_year = logistics_update_df[logistics_update_df['Год'] == selected_year]
+            available_months = sorted(df_year['Месяц'].dropna().unique())
+            available_months_display = [month_names[m] for m in available_months]
+            selected_month_display = st.selectbox("📅 Выберите месяц", available_months_display, key="lu_month")
+            selected_month = available_months[available_months_display.index(selected_month_display)]
+        
+        with col_filter3:
+            df_month = df_year[df_year['Месяц'] == selected_month]
+            if 'Город' in df_month.columns:
+                all_cities = sorted(df_month['Город'].dropna().unique())
+                selected_cities = st.multiselect(
+                    "🏙️ Выберите города",
+                    all_cities,
+                    default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+                    key="lu_cities"
+                )
+            else:
+                selected_cities = []
+        
+        mask = (logistics_update_df['Год'] == selected_year) & (logistics_update_df['Месяц'] == selected_month)
+        if selected_cities:
+            mask = mask & (logistics_update_df['Город'].isin(selected_cities))
+        df_filtered = logistics_update_df[mask]
+        
+        # ==========================================
+        # СРАВНЕНИЕ ГОД К ГОДУ
+        # ==========================================
+        st.divider()
+        st.subheader("📊 СРАВНЕНИЕ ГОД К ГОДУ")
+        
+        all_years = sorted(logistics_update_df['Год'].dropna().unique())
+        all_years_int = [int(y) for y in all_years]
+        
+        if len(all_years_int) >= 2:
+            col_comp1, col_comp2 = st.columns(2)
+            
+            with col_comp1:
+                year1 = st.selectbox(
+                    "Базовый год", 
+                    all_years_int, 
+                    index=len(all_years_int)-2 if len(all_years_int) >= 2 else 0, 
+                    key="compare_year1"
+                )
+            
+            with col_comp2:
+                year2 = st.selectbox(
+                    "Сравниваемый год", 
+                    all_years_int, 
+                    index=len(all_years_int)-1, 
+                    key="compare_year2"
+                )
+            
+            if year1 != year2:
+                # Фильтруем данные по годам
+                df_year1 = logistics_update_df[logistics_update_df['Год'] == year1]
+                df_year2 = logistics_update_df[logistics_update_df['Год'] == year2]
+                
+                # Группируем по месяцам
+                monthly1 = {}
+                monthly2 = {}
+                
+                for month in range(1, 13):
+                    val1 = df_year1[df_year1['Месяц'] == month]['Сумма_PLM_до_PЦ'].sum() + \
+                           df_year1[df_year1['Месяц'] == month]['Сумма_КЗ_до_PLM'].sum()
+                    val2 = df_year2[df_year2['Месяц'] == month]['Сумма_PLM_до_PЦ'].sum() + \
+                           df_year2[df_year2['Месяц'] == month]['Сумма_КЗ_до_PLM'].sum()
+                    monthly1[month] = val1
+                    monthly2[month] = val2
+                
+                # Создаем DataFrame для сравнения
+                comparison_data = []
+                for month in range(1, 13):
+                    comparison_data.append({
+                        'Месяц': month,
+                        'Название': month_names[month],
+                        f'{year1}': monthly1[month],
+                        f'{year2}': monthly2[month],
+                    })
+                
+                comparison = pd.DataFrame(comparison_data)
+                comparison['Разница'] = comparison[f'{year2}'] - comparison[f'{year1}']
+                
+                # Безопасное вычисление процента
+                def safe_pct(row):
+                    if row[f'{year1}'] != 0:
+                        return (row['Разница'] / row[f'{year1}'] * 100)
+                    return 0
+                
+                comparison['Изменение_%'] = comparison.apply(safe_pct, axis=1)
+                
+                # Общие итоги
+                total_year1 = comparison[f'{year1}'].sum()
+                total_year2 = comparison[f'{year2}'].sum()
+                total_diff = total_year2 - total_year1
+                total_diff_percent = (total_diff / total_year1 * 100) if total_year1 != 0 else 0
+                
+                # Метрики
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.metric(f"📅 {year1} год", f"{format_number(total_year1)} ₽")
+                with c2:
+                    st.metric(f"📅 {year2} год", f"{format_number(total_year2)} ₽")
+                with c3:
+                    st.metric("📊 Разница", f"{format_number(total_diff)} ₽", 
+                             delta=f"{format_float(total_diff_percent, 1)}%")
+                with c4:
+                    avg_monthly = total_diff / 12 if total_diff != 0 else 0
+                    st.metric("📈 Среднемесячное изменение", f"{format_number(avg_monthly)} ₽")
+                
+                st.divider()
+                
+                # График сравнения
+                st.subheader(f"📈 Сравнение по месяцам: {year1} vs {year2}")
+                
+                fig_compare = go.Figure()
+                fig_compare.add_trace(go.Scatter(
+                    x=comparison['Название'],
+                    y=comparison[f'{year1}'],
+                    mode='lines+markers',
+                    name=f'{year1}',
+                    line=dict(color='#2E86AB', width=2),
+                    marker=dict(size=6)
+                ))
+                fig_compare.add_trace(go.Scatter(
+                    x=comparison['Название'],
+                    y=comparison[f'{year2}'],
+                    mode='lines+markers',
+                    name=f'{year2}',
+                    line=dict(color='#D9534F', width=2),
+                    marker=dict(size=6)
+                ))
+                fig_compare.update_layout(
+                    title=f'Затраты на логистику: {year1} vs {year2}',
+                    xaxis_title='Месяц',
+                    yaxis_title='Затраты (₽)',
+                    hovermode='x unified',
+                    height=450
+                )
+                st.plotly_chart(fig_compare, use_container_width=True)
+                
+                # График разницы
+                st.subheader(f"📊 Разница {year2} - {year1} по месяцам")
+                
+                colors = ['#5CB85C' if x >= 0 else '#D9534F' for x in comparison['Разница']]
+                fig_diff = go.Figure()
+                fig_diff.add_trace(go.Bar(
+                    x=comparison['Название'],
+                    y=comparison['Разница'],
+                    marker_color=colors,
+                    text=comparison['Разница'].apply(lambda x: f"{format_number(x)} ₽"),
+                    textposition='outside'
+                ))
+                fig_diff.update_layout(
+                    title='Разница в затратах (плюс = рост, минус = снижение)',
+                    xaxis_title='Месяц',
+                    yaxis_title='Разница (₽)',
+                    height=400
+                )
+                st.plotly_chart(fig_diff, use_container_width=True)
+                
+                # Таблица сравнения
+                st.subheader("📋 Детальная таблица сравнения")
+                display_comp = comparison.copy()
+                display_comp[f'{year1}'] = display_comp[f'{year1}'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp[f'{year2}'] = display_comp[f'{year2}'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp['Разница'] = display_comp['Разница'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp['Изменение'] = display_comp['Изменение_%'].apply(lambda x: f"{format_float(x, 1)}%")
+                
+                st.dataframe(
+                    display_comp[['Название', f'{year1}', f'{year2}', 'Разница', 'Изменение']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Лучшая и худшая динамика
+                if len(comparison) > 0:
+                    min_change_idx = comparison['Изменение_%'].idxmin()
+                    max_change_idx = comparison['Изменение_%'].idxmax()
+                    
+                    if comparison.loc[min_change_idx, 'Изменение_%'] < 0:
+                        best_month = comparison.loc[min_change_idx]
+                        st.success(
+                            f"📉 **Лучшая динамика:** {best_month['Название']} — "
+                            f"снижение на {format_float(abs(best_month['Изменение_%']), 1)}% "
+                            f"({format_number(abs(best_month['Разница']))} ₽)"
+                        )
+                    
+                    if comparison.loc[max_change_idx, 'Изменение_%'] > 0:
+                        worst_month = comparison.loc[max_change_idx]
+                        st.error(
+                            f"📈 **Худшая динамика:** {worst_month['Название']} — "
+                            f"рост на {format_float(worst_month['Изменение_%'], 1)}% "
+                            f"({format_number(worst_month['Разница'])} ₽)"
+                        )
+            else:
+                st.info("Выберите разные годы для сравнения")
+        else:
+            st.info("Недостаточно данных для сравнения (нужно минимум 2 года)")
+        
+        # ==========================================
+        # ОСНОВНЫЕ МЕТРИКИ ЗА ВЫБРАННЫЙ ПЕРИОД
+        # ==========================================
+        st.divider()
+        st.subheader(f"📊 ИТОГИ ЗА {selected_month_display} {selected_year}")
+        
+        total_plm = df_filtered['Сумма_PLM_до_PЦ'].sum()
+        total_kz = df_filtered['Сумма_КЗ_до_PLM'].sum()
+        total_delivery = total_plm + total_kz
+        total_pallets = df_filtered['Кол_во_паллет'].sum()
+        total_orders = len(df_filtered)
+        
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("🚛 КЗ→PLM", f"{format_number(total_kz)} ₽")
+        with c2:
+            st.metric("📦 PLM→РЦ", f"{format_number(total_plm)} ₽")
+        with c3:
+            st.metric("💰 Итого", f"{format_number(total_delivery)} ₽")
+        with c4:
+            st.metric("📦 Паллет", f"{format_number(total_pallets)}")
+        with c5:
+            st.metric("📋 Заказов", f"{format_number(total_orders)}")
+        
+        if total_pallets > 0:
+            avg_pallet = total_delivery / total_pallets
+            st.metric("📊 Средняя стоимость паллеты", f"{format_number(avg_pallet)} ₽")
+        
+        # ТАБЛИЦА
+        st.divider()
+        st.subheader("📋 Детальные данные")
+        
+        if not df_filtered.empty:
+            display_cols = ['Дата', 'Город', 'Кол_во_паллет', 'Сумма_КЗ_до_PLM', 'Сумма_PLM_до_PЦ']
+            display_cols = [c for c in display_cols if c in df_filtered.columns]
+            
+            df_display = df_filtered[display_cols].copy()
+            if 'Сумма_КЗ_до_PLM' in df_display.columns:
+                df_display['Сумма_КЗ_до_PLM'] = df_display['Сумма_КЗ_до_PLM'].apply(
+                    lambda x: f"{format_number(x)} ₽"
+                )
+            if 'Сумма_PLM_до_PЦ' in df_display.columns:
+                df_display['Сумма_PLM_до_PЦ'] = df_display['Сумма_PLM_до_PЦ'].apply(
+                    lambda x: f"{format_number(x)} ₽"
+                )
+            
+            st.dataframe(df_display.head(100), use_container_width=True)
+            
+            csv_data = df_filtered[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+            st.download_button(
+                "📥 Скачать CSV", 
+                csv_data, 
+                f"logistics_update_{selected_year}_{selected_month}.csv", 
+                "text/csv"
+            )
+        else:
+            st.info("Нет данных за выбранный период")
+            
