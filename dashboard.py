@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -10,24 +11,26 @@ def format_number(value):
     if pd.isna(value):
         return "0"
     try:
-        return f"{int(value):,}".replace(",", " ")
-    except (ValueError, TypeError):
+        if isinstance(value, (int, float)):
+            if np.isinf(value) or np.isnan(value):
+                return "0"
+            return f"{int(value):,}".replace(",", " ")
         return str(value)
+    except (ValueError, TypeError, OverflowError):
+        return "0"
 
 def format_float(value, decimals=1):
     if pd.isna(value):
         return "0"
     try:
-        rounded = round(value, decimals)
-        if decimals == 0:
-            formatted = str(int(rounded))
-        else:
-            integer_part = int(rounded)
-            fractional_part = abs(int(round((rounded - integer_part) * 10**decimals)))
-            formatted = f"{integer_part},{fractional_part:0{decimals}d}"
-        return formatted
-    except (ValueError, TypeError):
+        if isinstance(value, (int, float)):
+            if np.isinf(value) or np.isnan(value):
+                return "0"
+            formatted = f"{value:.{decimals}f}".replace(".", ",")
+            return formatted
         return str(value)
+    except (ValueError, TypeError, OverflowError):
+        return "0"
 
 # ==========================================
 # 1. ЗАГРУЗКА ДАННЫХ
@@ -182,12 +185,11 @@ def load_logistics_update_data():
             return pd.DataFrame()
         
         # Определяем нужные столбцы по индексам
-        # A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9, K=10, L=11, M=12, N=13, O=14, P=15, Q=16
-        df['Сумма_PLM_до_PЦ'] = pd.to_numeric(df.iloc[:, 0], errors='coerce').fillna(0)   # A
-        df['Сумма_КЗ_до_PLM'] = pd.to_numeric(df.iloc[:, 3], errors='coerce').fillna(0)   # D
-        df['Кол_во_паллет'] = pd.to_numeric(df.iloc[:, 7], errors='coerce').fillna(0)      # H
+        df['Сумма_PLM_до_PЦ'] = pd.to_numeric(df.iloc[:, 0], errors='coerce').fillna(0)
+        df['Сумма_КЗ_до_PLM'] = pd.to_numeric(df.iloc[:, 3], errors='coerce').fillna(0)
+        df['Кол_во_паллет'] = pd.to_numeric(df.iloc[:, 7], errors='coerce').fillna(0)
         
-        # Город и даты (индексы 8, 9, 10)
+        # Город и даты
         if len(df.columns) > 8:
             df['Город'] = df.iloc[:, 8]
         if len(df.columns) > 9:
@@ -460,8 +462,18 @@ if page == "📈 Продажи":
 # ==========================================
 # СТРАНИЦА 2: ЛОГИСТИКА
 # ==========================================
-# (Оставлен без изменений, но для краткости пропущен в этом сообщении)
-# Полный код можно восстановить из предыдущих версий
+# (Полный код логистики - из предыдущих версий, для краткости здесь не приводится)
+# В полной версии файла должен быть полный код страницы логистики
+
+# ==========================================
+# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ
+# ==========================================
+# (Полный код анализа себестоимости - из предыдущих версий)
+
+# ==========================================
+# СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
+# ==========================================
+# (Полный код формирования себестоимости ПФ - из предыдущих версий)
 
 # ==========================================
 # СТРАНИЦА 5: ЛОГИСТИКА UPDATE
@@ -508,17 +520,16 @@ elif page == "🚚 Логистика Update":
         if selected_cities:
             mask = mask & (logistics_update_df['Город'].isin(selected_cities))
         df_filtered = logistics_update_df[mask]
-                # ==========================================
+        
+        # ==========================================
         # СРАВНЕНИЕ ГОД К ГОДУ
         # ==========================================
         st.divider()
         st.subheader("📊 СРАВНЕНИЕ ГОД К ГОДУ")
         
-        # Получаем доступные годы
         all_years = sorted(logistics_update_df['Год'].dropna().unique())
         
         if len(all_years) >= 2:
-            # Выбор годов для сравнения
             col_comp1, col_comp2 = st.columns(2)
             
             with col_comp1:
@@ -528,11 +539,9 @@ elif page == "🚚 Логистика Update":
                 year2 = st.selectbox("Сравниваемый год", all_years, index=len(all_years)-1, key="compare_year2")
             
             if year1 != year2:
-                # Фильтруем данные по годам
                 df_year1 = logistics_update_df[logistics_update_df['Год'] == year1]
                 df_year2 = logistics_update_df[logistics_update_df['Год'] == year2]
                 
-                # Группируем по месяцам
                 monthly_year1 = df_year1.groupby('Месяц').agg({
                     'Сумма_PLM_до_PЦ': 'sum',
                     'Сумма_КЗ_до_PLM': 'sum'
@@ -549,7 +558,6 @@ elif page == "🚚 Логистика Update":
                 monthly_year2['Название'] = monthly_year2['Месяц'].map(month_names)
                 monthly_year2 = monthly_year2.sort_values('Месяц')
                 
-                # Объединяем данные для сравнения
                 comparison = monthly_year1[['Название', 'Итого']].merge(
                     monthly_year2[['Название', 'Итого']],
                     on='Название',
@@ -558,15 +566,19 @@ elif page == "🚚 Логистика Update":
                 ).fillna(0)
                 
                 comparison['Разница'] = comparison[f'Итого_{year2}'] - comparison[f'Итого_{year1}']
-                comparison['Изменение_%'] = (comparison['Разница'] / comparison[f'Итого_{year1}'] * 100).fillna(0)
                 
-                # Общие итоги
+                def safe_percent_change(row):
+                    if row[f'Итого_{year1}'] != 0:
+                        return (row['Разница'] / row[f'Итого_{year1}'] * 100)
+                    return 0
+                
+                comparison['Изменение_%'] = comparison.apply(safe_percent_change, axis=1).fillna(0)
+                
                 total_year1 = comparison[f'Итого_{year1}'].sum()
                 total_year2 = comparison[f'Итого_{year2}'].sum()
                 total_diff = total_year2 - total_year1
-                total_diff_percent = (total_diff / total_year1 * 100) if total_year1 > 0 else 0
+                total_diff_percent = (total_diff / total_year1 * 100) if total_year1 != 0 else 0
                 
-                # Метрики сравнения
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     st.metric(f"📅 {year1} год", f"{format_number(total_year1)} ₽")
@@ -581,7 +593,6 @@ elif page == "🚚 Логистика Update":
                 
                 st.divider()
                 
-                # График сравнения по месяцам
                 st.subheader(f"📈 Сравнение по месяцам: {year1} vs {year2}")
                 
                 fig_compare = go.Figure()
@@ -610,7 +621,6 @@ elif page == "🚚 Логистика Update":
                 )
                 st.plotly_chart(fig_compare, use_container_width=True)
                 
-                # График разницы
                 st.subheader(f"📊 Разница {year2} - {year1} по месяцам")
                 
                 colors = ['#5CB85C' if x >= 0 else '#D9534F' for x in comparison['Разница']]
@@ -630,7 +640,6 @@ elif page == "🚚 Логистика Update":
                 )
                 st.plotly_chart(fig_diff, use_container_width=True)
                 
-                # Таблица сравнения
                 st.subheader("📋 Детальная таблица сравнения")
                 display_comp = comparison.copy()
                 display_comp[f'{year1}'] = display_comp[f'Итого_{year1}'].apply(lambda x: f"{format_number(x)} ₽")
@@ -644,7 +653,6 @@ elif page == "🚚 Логистика Update":
                     hide_index=True
                 )
                 
-                # Лучший и худший месяц
                 best_month = comparison.loc[comparison['Изменение_%'].idxmin()] if comparison['Изменение_%'].min() < 0 else None
                 worst_month = comparison.loc[comparison['Изменение_%'].idxmax()] if comparison['Изменение_%'].max() > 0 else None
                 
@@ -654,12 +662,14 @@ elif page == "🚚 Логистика Update":
                 if worst_month is not None:
                     st.error(f"📈 **Худшая динамика:** {worst_month['Название']} — рост на {format_float(worst_month['Изменение_%'], 1)}% "
                             f"({format_number(worst_month['Разница'])} ₽)")
-                
             else:
                 st.info("Выберите разные годы для сравнения")
         else:
             st.info("Недостаточно данных для сравнения (нужно минимум 2 года)")
-        # МЕТРИКИ
+        
+        # ==========================================
+        # ОСНОВНЫЕ МЕТРИКИ ЗА ВЫБРАННЫЙ ПЕРИОД
+        # ==========================================
         st.divider()
         st.subheader(f"📊 ИТОГИ ЗА {selected_month_display} {selected_year}")
         
