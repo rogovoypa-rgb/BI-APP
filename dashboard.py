@@ -222,7 +222,6 @@ def load_logistics_update_data():
         
         df['Год'] = df['Дата'].dt.year
         df['Месяц'] = df['Дата'].dt.month
-        df['Месяц_название'] = df['Месяц'].map(month_names)
         
         # Преобразуем числовые колонки
         numeric_cols = ['Итого доставка заказа от PLM до РЦ в т.ч. НДС',
@@ -411,7 +410,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</table>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
