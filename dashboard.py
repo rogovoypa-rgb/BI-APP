@@ -81,8 +81,110 @@ def load_logistics_data():
         st.warning(f"Ошибка загрузки логистики: {e}")
         return pd.DataFrame()
 
+@st.cache_data
+def load_production_data():
+    try:
+        # Читаем файл без заголовков
+        df = pd.read_excel('production_data.xlsx', header=None)
+        
+        records = []
+        
+        for idx, row in df.iterrows():
+            # Получаем значения
+            col0 = row[0] if pd.notna(row[0]) else None
+            col1 = row[1] if pd.notna(row[1]) else None
+            col2 = row[2] if pd.notna(row[2]) else None
+            col3 = row[3] if pd.notna(row[3]) else None
+            col4 = row[4] if pd.notna(row[4]) else None
+            col5 = row[5] if pd.notna(row[5]) else None
+            
+            # Пропускаем заголовок
+            if col0 == 'Номенклатура':
+                continue
+            
+            # Проверяем, является ли строка информацией о партии
+            if col5 is not None and col3 is not None:
+                try:
+                    cost_val = float(col5)
+                    qty_val = float(col3)
+                    
+                    # Определяем номер партии
+                    batch_id = None
+                    if col0 is not None and (isinstance(col0, (int, float)) or (isinstance(col0, str) and str(col0).replace('.', '').isdigit())):
+                        batch_id = str(col0)
+                    elif col1 is not None and (isinstance(col1, (int, float)) or (isinstance(col1, str) and str(col1).replace('.', '').isdigit())):
+                        batch_id = str(col1)
+                    
+                    if batch_id is not None:
+                        records.append({
+                            'Тип': 'Партия',
+                            'Партия': batch_id,
+                            'Количество_выпущено': qty_val,
+                            'Себестоимость_единицы': cost_val,
+                            'Сырье': None,
+                            'Количество_сырья': None,
+                            'Цена_сырья': None,
+                            'Сумма_сырья': None,
+                            'Себестоимость_на_единицу_продукции': cost_val
+                        })
+                except (ValueError, TypeError):
+                    pass
+            
+            # Проверяем, является ли строка информацией о сырье
+            if col0 is not None and col3 is not None and col4 is not None and col5 is not None:
+                try:
+                    # Определяем партию
+                    batch_id = None
+                    if col1 is not None and (isinstance(col1, (int, float)) or (isinstance(col1, str) and str(col1).replace('.', '').isdigit())):
+                        batch_id = str(col1)
+                    elif col2 is not None and (isinstance(col2, (int, float)) or (isinstance(col2, str) and str(col2).replace('.', '').isdigit())):
+                        batch_id = str(col2)
+                    
+                    if batch_id is not None:
+                        qty_raw = float(col3)
+                        sum_raw = float(col4)
+                        price_raw = sum_raw / qty_raw if qty_raw > 0 else 0
+                        
+                        records.append({
+                            'Тип': 'Сырье',
+                            'Партия': batch_id,
+                            'Количество_выпущено': None,
+                            'Себестоимость_единицы': None,
+                            'Сырье': col0,
+                            'Количество_сырья': qty_raw,
+                            'Цена_сырья': price_raw,
+                            'Сумма_сырья': sum_raw,
+                            'Себестоимость_на_единицу_продукции': None
+                        })
+                except (ValueError, TypeError):
+                    pass
+        
+        df_result = pd.DataFrame(records)
+        
+        # Постобработка: добавляем себестоимость на единицу продукции для сырья
+        if not df_result.empty:
+            for idx, row in df_result[df_result['Тип'] == 'Сырье'].iterrows():
+                batch = row['Партия']
+                batch_row = df_result[(df_result['Тип'] == 'Партия') & (df_result['Партия'] == batch)]
+                if not batch_row.empty:
+                    qty = batch_row.iloc[0]['Количество_выпущено']
+                    if qty and qty > 0:
+                        df_result.at[idx, 'Себестоимость_на_единицу_продукции'] = row['Сумма_сырья'] / qty
+                    else:
+                        df_result.at[idx, 'Себестоимость_на_единицу_продукции'] = row['Сумма_сырья']
+                else:
+                    df_result.at[idx, 'Себестоимость_на_единицу_продукции'] = row['Сумма_сырья']
+        
+        return df_result
+    except FileNotFoundError:
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Ошибка загрузки производственных данных: {e}")
+        return pd.DataFrame()
+
 sales_df = load_sales_data()
 logistics_df = load_logistics_data()
+production_df = load_production_data()
 
 # ==========================================
 # 2. НАЗВАНИЯ МЕСЯЦЕВ
@@ -101,7 +203,7 @@ st.set_page_config(page_title="BI Портал", layout="wide")
 st.sidebar.title("📊 Навигация")
 page = st.sidebar.radio(
     "Выберите раздел",
-    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости"]
+    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости", "🏭 Формирование себестоимости ПФ"]
 )
 
 # ==========================================
@@ -110,7 +212,7 @@ page = st.sidebar.radio(
 if page == "📈 Продажи":
     st.title("📊 BI Портал аналитики продаж")
     
-    # Получаем доступные годы (преобразуем в целые числа)
+    # Получаем доступные годы
     available_years = sorted(sales_df['Год'].dropna().unique())
     available_years_int = [int(y) for y in available_years]
     if len(available_years_int) == 0:
@@ -238,7 +340,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '<tr>'
+    html += '</tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -329,6 +431,7 @@ if page == "📈 Продажи":
         st.warning("Нет данных")
     
     st.caption(f"📅 {selected_month_display} {selected_year} | Записей: {format_number(len(df_filtered))}")
+
 # ==========================================
 # СТРАНИЦА 2: ЛОГИСТИКА
 # ==========================================
@@ -1180,7 +1283,6 @@ elif page == "📊 Анализ себестоимости":
                     
                     fig.update_xaxes(tickangle=-45)
                     
-                    # Используем unique key для каждого графика
                     st.plotly_chart(fig, use_container_width=True, key=f"cost_chart_{idx}_{nomen[:30]}")
                 
                 st.divider()
@@ -1224,14 +1326,13 @@ elif page == "📊 Анализ себестоимости":
                     f"cost_per_unit_summary_{selected_group}.csv",
                     "text/csv"
                 )
+
 # ==========================================
 # СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
     st.markdown("### Анализ себестоимости продукта **П/Ф Дрип Гватемала Декаф 1шт.**")
-    
-    production_df = load_production_data()
     
     if production_df.empty:
         st.warning("⚠️ Файл 'production_data.xlsx' не найден.")
@@ -1297,7 +1398,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
         if not batches.empty:
             st.subheader("📈 ДИНАМИКА СЕБЕСТОИМОСТИ ПО ПАРТИЯМ")
             
-            # Сортируем партии
             batches_sorted = batches.copy()
             batches_sorted['Партия_стр'] = batches_sorted['Партия'].astype(str)
             
@@ -1310,7 +1410,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
             elif sort_by == "По себестоимости (от высокой)":
                 batches_sorted = batches_sorted.sort_values('Себестоимость_единицы', ascending=False)
             
-            # График себестоимости по партиям
             fig_cost = go.Figure()
             fig_cost.add_trace(go.Scatter(
                 x=batches_sorted['Партия_стр'],
@@ -1321,7 +1420,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 marker=dict(size=8, color='#1A5276')
             ))
             
-            # Линия среднего
             fig_cost.add_hline(
                 y=avg_cost,
                 line_dash="dash",
@@ -1357,7 +1455,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 display_batches['Количество_выпущено'] = display_batches['Количество_выпущено'].apply(format_number)
                 st.dataframe(display_batches, use_container_width=True, hide_index=True)
                 
-                # График распределения себестоимости
                 st.subheader("📊 Распределение себестоимости по партиям")
                 fig_hist = px.histogram(batches, x='Себестоимость_единицы', nbins=20,
                                          title='Гистограмма распределения себестоимости',
@@ -1365,7 +1462,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 st.plotly_chart(fig_hist, use_container_width=True)
             
         else:
-            # Детальный анализ выбранной партии
             batch_info = batches[batches['Партия'].astype(str) == selected_batch]
             if batch_info.empty:
                 st.warning(f"Партия {selected_batch} не найдена")
@@ -1389,7 +1485,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 if not batch_materials.empty:
                     st.write("### 📋 Состав себестоимости партии")
                     
-                    # Рассчитываем долю каждого сырья
                     batch_materials['Доля_в_себестоимости'] = batch_materials['Себестоимость_на_единицу_продукции'] / batch_info['Себестоимость_единицы'] * 100
                     
                     display_materials = batch_materials[['Сырье', 'Количество_сырья', 'Цена_сырья', 'Себестоимость_на_единицу_продукции', 'Доля_в_себестоимости']].copy()
@@ -1400,14 +1495,12 @@ elif page == "🏭 Формирование себестоимости ПФ":
                     
                     st.dataframe(display_materials, use_container_width=True, hide_index=True)
                     
-                    # График структуры себестоимости (круговая диаграмма)
                     st.subheader("🥧 Структура себестоимости")
                     fig_pie = px.pie(batch_materials, values='Себестоимость_на_единицу_продукции', names='Сырье',
                                      title=f'Распределение затрат в партии {selected_batch}',
                                      labels={'Себестоимость_на_единицу_продукции': 'Затраты (₽/шт.)'})
                     st.plotly_chart(fig_pie, use_container_width=True)
                     
-                    # График: цена сырья vs количество
                     st.subheader("📊 Анализ сырья")
                     col1, col2 = st.columns(2)
                     
@@ -1455,7 +1548,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 
                 st.write(f"### Сравнение партий: {batch1} vs {batch2}")
                 
-                # Метрики сравнения
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
                     diff_cost = batch2_info['Себестоимость_единицы'] - batch1_info['Себестоимость_единицы']
@@ -1465,11 +1557,9 @@ elif page == "🏭 Формирование себестоимости ПФ":
                     diff_qty = batch2_info['Количество_выпущено'] - batch1_info['Количество_выпущено']
                     st.metric("Разница в выпуске", f"{format_number(diff_qty)} шт.")
                 
-                # Сравнение сырья
                 if not materials1.empty and not materials2.empty:
                     st.write("### Сравнение состава сырья")
                     
-                    # Объединяем данные для сравнения
                     comparison = materials1[['Сырье', 'Себестоимость_на_единицу_продукции']].merge(
                         materials2[['Сырье', 'Себестоимость_на_единицу_продукции']],
                         on='Сырье',
@@ -1485,7 +1575,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                     
                     st.dataframe(display_comp, use_container_width=True, hide_index=True)
                     
-                    # График сравнения
                     fig_comp = go.Figure()
                     fig_comp.add_trace(go.Bar(name=batch1, x=comparison['Сырье'], y=comparison['Себестоимость_на_единицу_продукции_1'], marker_color='#2E86AB'))
                     fig_comp.add_trace(go.Bar(name=batch2, x=comparison['Сырье'], y=comparison['Себестоимость_на_единицу_продукции_2'], marker_color='#D9534F'))
