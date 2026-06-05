@@ -1382,10 +1382,93 @@ elif page == "🏭 Формирование себестоимости ПФ":
             
             st.divider()
             
+                    st.divider()
+            
+            # ==========================================
+            # СРАВНЕНИЕ САМОЙ ДЕШЕВОЙ И САМОЙ ДОРОГОЙ ПАРТИИ
+            # ==========================================
+            if len(batches) >= 2:
+                st.subheader("💰 СРАВНЕНИЕ САМОЙ ДЕШЕВОЙ И САМОЙ ДОРОГОЙ ПАРТИИ")
+                
+                cheapest_batch = batches.loc[batches['Себестоимость_единицы'].idxmin()]
+                most_expensive_batch = batches.loc[batches['Себестоимость_единицы'].idxmax()]
+                
+                cheapest_materials = materials[materials['Партия'].astype(str) == str(cheapest_batch['Партия'])]
+                expensive_materials = materials[materials['Партия'].astype(str) == str(most_expensive_batch['Партия'])]
+                
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.markdown(f"""
+                    <div style='
+                        background-color: #D4EDDA;
+                        border-radius: 10px;
+                        padding: 15px;
+                        text-align: center;
+                        border: 1px solid #28A745;
+                    '>
+                        <div style='font-size: 18px; font-weight: bold; color: #155724;'>🟢 САМАЯ ДЕШЕВАЯ ПАРТИЯ</div>
+                        <div style='font-size: 24px; font-weight: bold; margin-top: 10px;'>{cheapest_batch['Партия']}</div>
+                        <div style='font-size: 20px; font-weight: bold; color: #28A745; margin-top: 10px;'>{format_number(cheapest_batch['Себестоимость_единицы'])} ₽/шт.</div>
+                        <div style='font-size: 14px; color: #666; margin-top: 5px;'>Выпущено: {format_number(cheapest_batch['Количество_выпущено'])} шт.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if not cheapest_materials.empty:
+                        st.markdown("**Состав сырья:**")
+                        cheapest_display = cheapest_materials[['Сырье', 'Себестоимость_на_единицу_продукции']].copy()
+                        cheapest_display['Доля_в_себестоимости'] = cheapest_display['Себестоимость_на_единицу_продукции'] / cheapest_batch['Себестоимость_единицы'] * 100
+                        cheapest_display = cheapest_display.sort_values('Себестоимость_на_единицу_продукции', ascending=False)
+                        for _, row in cheapest_display.iterrows():
+                            st.write(f"• {row['Сырье']}: {format_number(row['Себестоимость_на_единицу_продукции'])} ₽/шт. ({format_float(row['Доля_в_себестоимости'], 1)}%)")
+                
+                with col_right:
+                    st.markdown(f"""
+                    <div style='
+                        background-color: #F8D7DA;
+                        border-radius: 10px;
+                        padding: 15px;
+                        text-align: center;
+                        border: 1px solid #DC3545;
+                    '>
+                        <div style='font-size: 18px; font-weight: bold; color: #721C24;'>🔴 САМАЯ ДОРОГАЯ ПАРТИЯ</div>
+                        <div style='font-size: 24px; font-weight: bold; margin-top: 10px;'>{most_expensive_batch['Партия']}</div>
+                        <div style='font-size: 20px; font-weight: bold; color: #DC3545; margin-top: 10px;'>{format_number(most_expensive_batch['Себестоимость_единицы'])} ₽/шт.</div>
+                        <div style='font-size: 14px; color: #666; margin-top: 5px;'>Выпущено: {format_number(most_expensive_batch['Количество_выпущено'])} шт.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if not expensive_materials.empty:
+                        st.markdown("**Состав сырья:**")
+                        expensive_display = expensive_materials[['Сырье', 'Себестоимость_на_единицу_продукции']].copy()
+                        expensive_display['Доля_в_себестоимости'] = expensive_display['Себестоимость_на_единицу_продукции'] / most_expensive_batch['Себестоимость_единицы'] * 100
+                        expensive_display = expensive_display.sort_values('Себестоимость_на_единицу_продукции', ascending=False)
+                        for _, row in expensive_display.iterrows():
+                            st.write(f"• {row['Сырье']}: {format_number(row['Себестоимость_на_единицу_продукции'])} ₽/шт. ({format_float(row['Доля_в_себестоимости'], 1)}%)")
+                
+                diff_cost = most_expensive_batch['Себестоимость_единицы'] - cheapest_batch['Себестоимость_единицы']
+                diff_percent = (diff_cost / cheapest_batch['Себестоимость_единицы'] * 100)
+                
+                st.markdown(f"""
+                <div style='
+                    background-color: #E2E3E5;
+                    border-radius: 10px;
+                    padding: 10px;
+                    text-align: center;
+                    margin-top: 10px;
+                '>
+                    <span style='font-size: 16px;'>📊 Разница между самой дорогой и самой дешевой партией:</span>
+                    <span style='font-size: 20px; font-weight: bold; color: #DC3545;'>{format_number(diff_cost)} ₽/шт.</span>
+                    <span style='font-size: 16px;'>({format_float(diff_percent, 1)}% дороже)</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.divider()
+            
             # ==========================================
             # ГРАФИК ДИНАМИКИ СЕБЕСТОИМОСТИ ПО ПАРТИЯМ
             # ==========================================
-            st.subheader("📈 ДИНАМИКА СЕБЕСТОИМОСТИ ПО ПАРТИЯМ")
+            st.subheader("📈 ДИНАМИКА СЕБЕСТОИМОСТИ ПО ПАРТИЯМ")")
             
             batches_sorted = batches.copy()
             batches_sorted['Партия_стр'] = batches_sorted['Партия'].astype(str)
