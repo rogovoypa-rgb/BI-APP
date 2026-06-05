@@ -508,7 +508,157 @@ elif page == "🚚 Логистика Update":
         if selected_cities:
             mask = mask & (logistics_update_df['Город'].isin(selected_cities))
         df_filtered = logistics_update_df[mask]
+                # ==========================================
+        # СРАВНЕНИЕ ГОД К ГОДУ
+        # ==========================================
+        st.divider()
+        st.subheader("📊 СРАВНЕНИЕ ГОД К ГОДУ")
         
+        # Получаем доступные годы
+        all_years = sorted(logistics_update_df['Год'].dropna().unique())
+        
+        if len(all_years) >= 2:
+            # Выбор годов для сравнения
+            col_comp1, col_comp2 = st.columns(2)
+            
+            with col_comp1:
+                year1 = st.selectbox("Базовый год", all_years, index=len(all_years)-2 if len(all_years) >= 2 else 0, key="compare_year1")
+            
+            with col_comp2:
+                year2 = st.selectbox("Сравниваемый год", all_years, index=len(all_years)-1, key="compare_year2")
+            
+            if year1 != year2:
+                # Фильтруем данные по годам
+                df_year1 = logistics_update_df[logistics_update_df['Год'] == year1]
+                df_year2 = logistics_update_df[logistics_update_df['Год'] == year2]
+                
+                # Группируем по месяцам
+                monthly_year1 = df_year1.groupby('Месяц').agg({
+                    'Сумма_PLM_до_PЦ': 'sum',
+                    'Сумма_КЗ_до_PLM': 'sum'
+                }).reset_index()
+                monthly_year1['Итого'] = monthly_year1['Сумма_PLM_до_PЦ'] + monthly_year1['Сумма_КЗ_до_PLM']
+                monthly_year1['Название'] = monthly_year1['Месяц'].map(month_names)
+                monthly_year1 = monthly_year1.sort_values('Месяц')
+                
+                monthly_year2 = df_year2.groupby('Месяц').agg({
+                    'Сумма_PLM_до_PЦ': 'sum',
+                    'Сумма_КЗ_до_PLM': 'sum'
+                }).reset_index()
+                monthly_year2['Итого'] = monthly_year2['Сумма_PLM_до_PЦ'] + monthly_year2['Сумма_КЗ_до_PLM']
+                monthly_year2['Название'] = monthly_year2['Месяц'].map(month_names)
+                monthly_year2 = monthly_year2.sort_values('Месяц')
+                
+                # Объединяем данные для сравнения
+                comparison = monthly_year1[['Название', 'Итого']].merge(
+                    monthly_year2[['Название', 'Итого']],
+                    on='Название',
+                    how='outer',
+                    suffixes=(f'_{year1}', f'_{year2}')
+                ).fillna(0)
+                
+                comparison['Разница'] = comparison[f'Итого_{year2}'] - comparison[f'Итого_{year1}']
+                comparison['Изменение_%'] = (comparison['Разница'] / comparison[f'Итого_{year1}'] * 100).fillna(0)
+                
+                # Общие итоги
+                total_year1 = comparison[f'Итого_{year1}'].sum()
+                total_year2 = comparison[f'Итого_{year2}'].sum()
+                total_diff = total_year2 - total_year1
+                total_diff_percent = (total_diff / total_year1 * 100) if total_year1 > 0 else 0
+                
+                # Метрики сравнения
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    st.metric(f"📅 {year1} год", f"{format_number(total_year1)} ₽")
+                with c2:
+                    st.metric(f"📅 {year2} год", f"{format_number(total_year2)} ₽")
+                with c3:
+                    st.metric("📊 Разница", f"{format_number(total_diff)} ₽", 
+                             delta=f"{format_float(total_diff_percent, 1)}%")
+                with c4:
+                    avg_monthly = total_diff / 12 if total_diff != 0 else 0
+                    st.metric("📈 Среднемесячное изменение", f"{format_number(avg_monthly)} ₽")
+                
+                st.divider()
+                
+                # График сравнения по месяцам
+                st.subheader(f"📈 Сравнение по месяцам: {year1} vs {year2}")
+                
+                fig_compare = go.Figure()
+                fig_compare.add_trace(go.Scatter(
+                    x=comparison['Название'],
+                    y=comparison[f'Итого_{year1}'],
+                    mode='lines+markers',
+                    name=f'{year1}',
+                    line=dict(color='#2E86AB', width=2),
+                    marker=dict(size=6)
+                ))
+                fig_compare.add_trace(go.Scatter(
+                    x=comparison['Название'],
+                    y=comparison[f'Итого_{year2}'],
+                    mode='lines+markers',
+                    name=f'{year2}',
+                    line=dict(color='#D9534F', width=2),
+                    marker=dict(size=6)
+                ))
+                fig_compare.update_layout(
+                    title=f'Затраты на логистику: {year1} vs {year2}',
+                    xaxis_title='Месяц',
+                    yaxis_title='Затраты (₽)',
+                    hovermode='x unified',
+                    height=450
+                )
+                st.plotly_chart(fig_compare, use_container_width=True)
+                
+                # График разницы
+                st.subheader(f"📊 Разница {year2} - {year1} по месяцам")
+                
+                colors = ['#5CB85C' if x >= 0 else '#D9534F' for x in comparison['Разница']]
+                fig_diff = go.Figure()
+                fig_diff.add_trace(go.Bar(
+                    x=comparison['Название'],
+                    y=comparison['Разница'],
+                    marker_color=colors,
+                    text=comparison['Разница'].apply(lambda x: f"{format_number(x)} ₽"),
+                    textposition='outside'
+                ))
+                fig_diff.update_layout(
+                    title='Разница в затратах (плюс = рост, минус = снижение)',
+                    xaxis_title='Месяц',
+                    yaxis_title='Разница (₽)',
+                    height=400
+                )
+                st.plotly_chart(fig_diff, use_container_width=True)
+                
+                # Таблица сравнения
+                st.subheader("📋 Детальная таблица сравнения")
+                display_comp = comparison.copy()
+                display_comp[f'{year1}'] = display_comp[f'Итого_{year1}'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp[f'{year2}'] = display_comp[f'Итого_{year2}'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp['Разница'] = display_comp['Разница'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp['Изменение'] = display_comp['Изменение_%'].apply(lambda x: f"{format_float(x, 1)}%")
+                
+                st.dataframe(
+                    display_comp[['Название', f'{year1}', f'{year2}', 'Разница', 'Изменение']],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Лучший и худший месяц
+                best_month = comparison.loc[comparison['Изменение_%'].idxmin()] if comparison['Изменение_%'].min() < 0 else None
+                worst_month = comparison.loc[comparison['Изменение_%'].idxmax()] if comparison['Изменение_%'].max() > 0 else None
+                
+                if best_month is not None:
+                    st.success(f"📉 **Лучшая динамика:** {best_month['Название']} — снижение на {format_float(abs(best_month['Изменение_%']), 1)}% "
+                             f"({format_number(abs(best_month['Разница']))} ₽)")
+                if worst_month is not None:
+                    st.error(f"📈 **Худшая динамика:** {worst_month['Название']} — рост на {format_float(worst_month['Изменение_%'], 1)}% "
+                            f"({format_number(worst_month['Разница'])} ₽)")
+                
+            else:
+                st.info("Выберите разные годы для сравнения")
+        else:
+            st.info("Недостаточно данных для сравнения (нужно минимум 2 года)")
         # МЕТРИКИ
         st.divider()
         st.subheader(f"📊 ИТОГИ ЗА {selected_month_display} {selected_year}")
