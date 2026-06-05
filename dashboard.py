@@ -94,22 +94,25 @@ def load_production_data():
             if row[0] == 'Номенклатура':
                 continue
             
-            col0 = row[0] if pd.notna(row[0]) else None
-            col1 = row[1] if pd.notna(row[1]) else None
-            col2 = row[2] if pd.notna(row[2]) else None
-            col3 = row[3] if pd.notna(row[3]) else None
-            col4 = row[4] if pd.notna(row[4]) else None
-            col5 = row[5] if pd.notna(row[5]) else None
+            # Получаем значения из нужных колонок
+            col0 = row[0] if pd.notna(row[0]) else None  # Номенклатура
+            col1 = row[1] if pd.notna(row[1]) else None  # Доп. информация
+            col2 = row[2] if pd.notna(row[2]) else None  # Доп. информация
+            col3 = row[3] if pd.notna(row[3]) else None  # Партия продукции
+            col4 = row[4] if pd.notna(row[4]) else None  # Количество продукции
+            col5 = row[5] if pd.notna(row[5]) else None  # Количество
+            col6 = row[6] if pd.notna(row[6]) else None  # Сумма
+            col7 = row[7] if pd.notna(row[7]) else None  # Себестоимость ед.
             
-            # Проверяем, является ли строка партией (номер партии в col0, количество в col1, сумма в col3, себестоимость в col5)
-            if col0 is not None and col1 is not None and col3 is not None and col5 is not None:
+            # Проверяем, является ли строка партией (есть партия, количество, сумма, себестоимость)
+            if col3 is not None and col4 is not None and col6 is not None and col7 is not None:
                 try:
-                    batch_num = str(col0).strip()
-                    qty = float(str(col1).replace(',', '.'))
-                    sum_val = float(str(col3).replace(',', '.'))
-                    cost = float(str(col5).replace(',', '.'))
+                    batch_num = str(col3).strip()
+                    qty = float(str(col4).replace(',', '.'))
+                    sum_val = float(str(col6).replace(',', '.'))
+                    cost = float(str(col7).replace(',', '.'))
                     
-                    # Если номер партии похож на дату (6 цифр) - это партия
+                    # Номер партии - 6 цифр
                     if batch_num.isdigit() and len(batch_num) == 6:
                         records.append({
                             'Тип': 'Партия',
@@ -125,23 +128,17 @@ def load_production_data():
                 except (ValueError, TypeError):
                     pass
             
-            # Проверяем, является ли строка сырьём (есть номенклатура, количество, сумма, себестоимость)
-            if col0 is not None and col2 is not None and col3 is not None and col4 is not None and col5 is not None:
-                # Пропускаем строки-партии
-                if col0 is not None and str(col0).isdigit() and len(str(col0)) == 6:
-                    continue
-                
+            # Проверяем, является ли строка сырьём (есть номенклатура, партия, количество, сумма, себестоимость)
+            if col0 is not None and col3 is not None and col5 is not None and col6 is not None and col7 is not None:
                 try:
-                    # Определяем партию (она может быть в col1 или col2)
-                    batch_id = None
-                    if col1 is not None and str(col1).isdigit() and len(str(col1)) == 6:
-                        batch_id = str(col1)
-                    elif col2 is not None and str(col2).isdigit() and len(str(col2)) == 6:
-                        batch_id = str(col2)
+                    # Пропускаем строки-партии
+                    if col0 == 'П/Ф Дрип Гватемала Декаф 1шт.' or col0 == 'Дрип машина (Производство)':
+                        continue
                     
-                    if batch_id is not None:
-                        qty_raw = float(str(col3).replace(',', '.'))
-                        sum_raw = float(str(col4).replace(',', '.'))
+                    batch_id = str(col3).strip()
+                    if batch_id.isdigit() and len(batch_id) == 6:
+                        qty_raw = float(str(col5).replace(',', '.'))
+                        sum_raw = float(str(col6).replace(',', '.'))
                         
                         records.append({
                             'Тип': 'Сырье',
@@ -174,8 +171,6 @@ def load_production_data():
                     df_result.at[idx, 'Себестоимость_на_единицу_продукции'] = row['Сумма_сырья']
         
         return df_result
-    except FileNotFoundError:
-        return pd.DataFrame()
     except Exception as e:
         st.error(f"Ошибка загрузки производственных данных: {e}")
         return pd.DataFrame()
@@ -338,7 +333,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</tr>'
+    html += '</td>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -1329,50 +1324,21 @@ elif page == "📊 Анализ себестоимости":
 # СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
-     # ВРЕМЕННАЯ ДИАГНОСТИКА
-    with st.expander("🔧 Детальная диагностика (временно)"):
-        import os
-        st.write("Файлы в папке:", os.listdir('.'))
-        
-        try:
-            df_test = pd.read_excel('production_data.xlsx', header=None)
-            st.write(f"Файл прочитан, строк: {len(df_test)}, столбцов: {len(df_test.columns)}")
-            st.write("Первые 5 строк:")
-            for i in range(min(5, len(df_test))):
-                st.write(f"Строка {i}: {df_test.iloc[i].values[:8].tolist()}")
-        except Exception as e:
-            st.error(f"Ошибка чтения: {e}")
-        
-        st.write(f"production_df пуст? {production_df.empty}")
-        if not production_df.empty:
-            st.write(f"production_df содержит {len(production_df)} записей")
-            st.write(production_df.head())
     st.title("🏭 Формирование себестоимости полуфабриката")
     st.markdown("### Анализ себестоимости продукта **П/Ф Дрип Гватемала Декаф 1шт.**")
     
     if production_df.empty:
         st.warning("⚠️ Файл 'production_data.xlsx' не найден или не удалось загрузить данные.")
         st.info("📌 Пожалуйста, добавьте файл с данными о производстве в папку с приложением.")
-        
-        import os
-        with st.expander("🔧 Диагностика"):
-            st.write("Файлы в текущей папке:")
-            for f in os.listdir('.'):
-                if f.endswith('.xlsx'):
-                    st.write(f"  - {f}")
     else:
         # Отображаем общую информацию
         batches = production_df[production_df['Тип'] == 'Партия'].copy()
         materials = production_df[production_df['Тип'] == 'Сырье'].copy()
         
-        if batches.empty and materials.empty:
-            st.warning("Не удалось распознать данные в файле. Проверьте структуру файла.")
-            with st.expander("🔧 Показать первые 20 строк файла для диагностики"):
-                df_raw = pd.read_excel('production_data.xlsx', header=None)
-                for i in range(min(20, len(df_raw))):
-                    row = df_raw.iloc[i].values
-                    non_empty = [str(x) for x in row[:8] if pd.notna(x)]
-                    st.write(f"Строка {i}: {non_empty}")
+        if batches.empty:
+            st.warning("Не удалось распознать партии в файле.")
+            with st.expander("🔧 Показать загруженные данные"):
+                st.write(production_df.head(20))
         else:
             st.success(f"✅ Загружено {len(batches)} партий и {len(materials)} записей о сырье")
             
