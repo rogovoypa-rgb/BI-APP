@@ -178,83 +178,56 @@ def load_production_data():
 @st.cache_data
 def load_logistics_update_data():
     try:
-        # Читаем файл с заголовками
+        # Читаем файл
         df = pd.read_excel('BI logisticks.xlsx', header=0)
         
-        # Удаляем строки, где все значения NaN (пустые строки)
-        df = df.dropna(how='all')
+        # Оставляем только строки, где все столбцы I-Q (индексы 8-16) заполнены
+        mask = pd.Series([True] * len(df))
+        for i in range(8, 17):
+            mask = mask & df.iloc[:, i].notna()
         
-        # Удаляем строки, где нет города (это пустые или служебные строки)
-        if 'Город' in df.columns:
-            df = df[df['Город'].notna()]
+        df_filtered = df[mask].copy()
         
-        # Если после фильтрации нет данных, пробуем другой подход
-        if df.empty:
-            # Читаем без заголовков и ищем данные
-            df_raw = pd.read_excel('BI logisticks.xlsx', header=None)
-            # Ищем строку, где есть 'Город' - это заголовок
-            header_row = None
-            for i in range(min(30, len(df_raw))):
-                if 'Город' in str(df_raw.iloc[i].values):
-                    header_row = i
-                    break
-            
-            if header_row is not None:
-                # Устанавливаем заголовки
-                df_raw.columns = df_raw.iloc[header_row]
-                # Начинаем со следующей строки
-                df = df_raw.iloc[header_row + 1:].reset_index(drop=True)
-                # Удаляем строки с пустыми городами
-                if 'Город' in df.columns:
-                    df = df[df['Город'].notna()]
-        
-        # Если всё ещё пусто, создаем пустой DataFrame
-        if df.empty:
+        if df_filtered.empty:
+            st.warning("Нет строк с заполненными столбцами I-Q")
             return pd.DataFrame()
         
-        # Преобразуем дату
-        if 'Дата отгрузки' in df.columns:
-            df['Дата'] = pd.to_datetime(df['Дата отгрузки'], errors='coerce')
-        elif 'Дата заказа' in df.columns:
-            df['Дата'] = pd.to_datetime(df['Дата заказа'], errors='coerce')
+        # Переименовываем столбцы для удобства (по вашим индексам)
+        # A=0, B=1, C=2, D=3, E=4, F=5, G=6, H=7, I=8, J=9, K=10, L=11, M=12, N=13, O=14, P=15, Q=16, R=17...
+        
+        # Основные столбцы для анализа
+        df_filtered['Сумма_PLM_до_PЦ'] = pd.to_numeric(df_filtered.iloc[:, 0], errors='coerce')  # A
+        df_filtered['Сумма_КЗ_до_PLM'] = pd.to_numeric(df_filtered.iloc[:, 3], errors='coerce')  # D (Цена доставки КЗ-PLM)
+        df_filtered['Кол_во_паллет'] = pd.to_numeric(df_filtered.iloc[:, 8], errors='coerce')    # I
+        df_filtered['Город'] = df_filtered.iloc[:, 8]  # I (Город)
+        df_filtered['Дата_отгрузки'] = pd.to_datetime(df_filtered.iloc[:, 9], errors='coerce')   # J
+        df_filtered['Дата_заказа'] = pd.to_datetime(df_filtered.iloc[:, 10], errors='coerce')    # K
+        df_filtered['Категория'] = df_filtered.iloc[:, 12]  # M
+        df_filtered['Подкатегория'] = df_filtered.iloc[:, 13]  # N
+        df_filtered['Группа'] = df_filtered.iloc[:, 14]  # O
+        df_filtered['Подгруппа'] = df_filtered.iloc[:, 15]  # P
+        df_filtered['Контрагент'] = df_filtered.iloc[:, 16]  # Q
+        
+        # Используем дату заказа или отгрузки
+        if df_filtered['Дата_заказа'].notna().any():
+            df_filtered['Дата'] = df_filtered['Дата_заказа']
         else:
-            df['Дата'] = pd.Timestamp.now()
+            df_filtered['Дата'] = df_filtered['Дата_отгрузки']
         
-        df['Год'] = df['Дата'].dt.year
-        df['Месяц'] = df['Дата'].dt.month
+        df_filtered['Год'] = df_filtered['Дата'].dt.year
+        df_filtered['Месяц'] = df_filtered['Дата'].dt.month
         
-        # Преобразуем числовые колонки
-        numeric_cols = ['Итого доставка заказа от PLM до РЦ в т.ч. НДС',
-                        'Итого доставка заказа от PLM до РЦ. Без НДС',
-                        'НДС за доставку заказа от PLM до РЦ',
-                        'Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС',
-                        'Цена доставки этого заказа от КЗ до PLM.. Без НДС',
-                        'НДС за доставку этого заказа от КЗ до PLM.',
-                        'Итого совокупная Стоимость доставки 1 паллета без НДС',
-                        'Кол-во паллет в заказе']
+        # Заполняем нули для отсутствующих значений
+        df_filtered['Сумма_PLM_до_PЦ'] = df_filtered['Сумма_PLM_до_PЦ'].fillna(0)
+        df_filtered['Сумма_КЗ_до_PLM'] = df_filtered['Сумма_КЗ_до_PLM'].fillna(0)
+        df_filtered['Кол_во_паллет'] = df_filtered['Кол_во_паллет'].fillna(0)
         
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
-        
-        # Создаем столбцы с суммами
-        df['Сумма_PLM_до_PЦ'] = df['Итого доставка заказа от PLM до РЦ в т.ч. НДС']
-        df['Сумма_КЗ_до_PLM'] = df['Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС']
-        
-        # Удаляем строки с нулевыми значениями (если все затраты = 0)
-        df = df[(df['Сумма_PLM_до_PЦ'] > 0) | (df['Сумма_КЗ_до_PLM'] > 0)]
-        
-        return df
+        return df_filtered
     except FileNotFoundError:
         return pd.DataFrame()
     except Exception as e:
         st.error(f"Ошибка загрузки логистики update: {e}")
         return pd.DataFrame()
-
-sales_df = load_sales_data()
-logistics_df = load_logistics_data()
-production_df = load_production_data()
-logistics_update_df = load_logistics_update_data()
 
 # ==========================================
 # 2. НАЗВАНИЯ МЕСЯЦЕВ
