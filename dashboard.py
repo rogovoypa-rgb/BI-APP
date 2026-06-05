@@ -1719,8 +1719,7 @@ elif page == "🚚 Логистика Update":
                     'Сумма_КЗ_до_PLM': 'sum'
                 }).reset_index()
                 monthly_year1['Итого'] = monthly_year1['Сумма_PLM_до_PЦ'] + monthly_year1['Сумма_КЗ_до_PLM']
-                monthly_year1['Название'] = monthly_year1['Месяц'].map(month_names)
-                # Сортируем по номеру месяца для правильного порядка
+                monthly_year1['Название_месяца'] = monthly_year1['Месяц'].map(month_names)
                 monthly_year1 = monthly_year1.sort_values('Месяц')
                 
                 monthly_year2 = df_year2.groupby('Месяц').agg({
@@ -1728,16 +1727,26 @@ elif page == "🚚 Логистика Update":
                     'Сумма_КЗ_до_PLM': 'sum'
                 }).reset_index()
                 monthly_year2['Итого'] = monthly_year2['Сумма_PLM_до_PЦ'] + monthly_year2['Сумма_КЗ_до_PLM']
-                monthly_year2['Название'] = monthly_year2['Месяц'].map(month_names)
+                monthly_year2['Название_месяца'] = monthly_year2['Месяц'].map(month_names)
                 monthly_year2 = monthly_year2.sort_values('Месяц')
                 
                 # Объединяем по порядку месяцев (1-12)
-                comparison = monthly_year1[['Месяц', 'Название', 'Итого']].merge(
-                    monthly_year2[['Месяц', 'Название', 'Итого']],
+                comparison = pd.merge(
+                    monthly_year1[['Месяц', 'Название_месяца', 'Итого']],
+                    monthly_year2[['Месяц', 'Название_месяца', 'Итого']],
                     on='Месяц',
                     how='outer',
                     suffixes=(f'_{year1}', f'_{year2}')
                 ).fillna(0).sort_values('Месяц')
+                
+                # Заполняем названия месяцев, если они отсутствуют
+                for idx, row in comparison.iterrows():
+                    if pd.isna(row['Название_месяца_x']) and row['Месяц'] in month_names:
+                        comparison.at[idx, 'Название_месяца_x'] = month_names[row['Месяц']]
+                    if pd.isna(row['Название_месяца_y']) and row['Месяц'] in month_names:
+                        comparison.at[idx, 'Название_месяца_y'] = month_names[row['Месяц']]
+                
+                comparison['Название'] = comparison['Название_месяца_x'].fillna(comparison['Название_месяца_y'])
                 
                 comparison['Разница'] = comparison[f'Итого_{year2}'] - comparison[f'Итого_{year1}']
                 
@@ -1755,9 +1764,9 @@ elif page == "🚚 Логистика Update":
                 
                 c1, c2, c3, c4 = st.columns(4)
                 with c1:
-                    st.metric(f"📅 {year1} год", f"{format_number(total_year1)} ₽")
+                    st.metric(f"📅 {int(year1)} год", f"{format_number(total_year1)} ₽")
                 with c2:
-                    st.metric(f"📅 {year2} год", f"{format_number(total_year2)} ₽")
+                    st.metric(f"📅 {int(year2)} год", f"{format_number(total_year2)} ₽")
                 with c3:
                     st.metric("📊 Разница", f"{format_number(total_diff)} ₽", 
                              delta=f"{format_float(total_diff_percent, 1)}%")
@@ -1767,14 +1776,17 @@ elif page == "🚚 Логистика Update":
                 
                 st.divider()
                 
-                st.subheader(f"📈 Сравнение по месяцам: {year1} vs {year2}")
+                st.subheader(f"📈 Сравнение по месяцам: {int(year1)} vs {int(year2)}")
+                
+                # Убедимся, что данные отсортированы по месяцам
+                comparison = comparison.sort_values('Месяц')
                 
                 fig_compare = go.Figure()
                 fig_compare.add_trace(go.Scatter(
                     x=comparison['Название'],
                     y=comparison[f'Итого_{year1}'],
                     mode='lines+markers',
-                    name=f'{year1}',
+                    name=f'{int(year1)}',
                     line=dict(color='#2E86AB', width=2),
                     marker=dict(size=6)
                 ))
@@ -1782,12 +1794,12 @@ elif page == "🚚 Логистика Update":
                     x=comparison['Название'],
                     y=comparison[f'Итого_{year2}'],
                     mode='lines+markers',
-                    name=f'{year2}',
+                    name=f'{int(year2)}',
                     line=dict(color='#D9534F', width=2),
                     marker=dict(size=6)
                 ))
                 fig_compare.update_layout(
-                    title=f'Затраты на логистику: {year1} vs {year2}',
+                    title=f'Затраты на логистику: {int(year1)} vs {int(year2)}',
                     xaxis_title='Месяц',
                     yaxis_title='Затраты (₽)',
                     hovermode='x unified',
@@ -1795,7 +1807,7 @@ elif page == "🚚 Логистика Update":
                 )
                 st.plotly_chart(fig_compare, use_container_width=True)
                 
-                st.subheader(f"📊 Разница {year2} - {year1} по месяцам")
+                st.subheader(f"📊 Разница {int(year2)} - {int(year1)} по месяцам")
                 
                 colors = ['#5CB85C' if x >= 0 else '#D9534F' for x in comparison['Разница']]
                 fig_diff = go.Figure()
@@ -1816,26 +1828,30 @@ elif page == "🚚 Логистика Update":
                 
                 st.subheader("📋 Детальная таблица сравнения")
                 display_comp = comparison.copy()
-                display_comp[f'{year1}'] = display_comp[f'Итого_{year1}'].apply(lambda x: f"{format_number(x)} ₽")
-                display_comp[f'{year2}'] = display_comp[f'Итого_{year2}'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp[f'{int(year1)}'] = display_comp[f'Итого_{year1}'].apply(lambda x: f"{format_number(x)} ₽")
+                display_comp[f'{int(year2)}'] = display_comp[f'Итого_{year2}'].apply(lambda x: f"{format_number(x)} ₽")
                 display_comp['Разница'] = display_comp['Разница'].apply(lambda x: f"{format_number(x)} ₽")
                 display_comp['Изменение'] = display_comp['Изменение_%'].apply(lambda x: f"{format_float(x, 1)}%")
                 
                 st.dataframe(
-                    display_comp[['Название', f'{year1}', f'{year2}', 'Разница', 'Изменение']],
+                    display_comp[['Название', f'{int(year1)}', f'{int(year2)}', 'Разница', 'Изменение']],
                     use_container_width=True,
                     hide_index=True
                 )
                 
-                best_month = comparison.loc[comparison['Изменение_%'].idxmin()] if comparison['Изменение_%'].min() < 0 else None
-                worst_month = comparison.loc[comparison['Изменение_%'].idxmax()] if comparison['Изменение_%'].max() > 0 else None
-                
-                if best_month is not None:
-                    st.success(f"📉 **Лучшая динамика:** {best_month['Название']} — снижение на {format_float(abs(best_month['Изменение_%']), 1)}% "
-                             f"({format_number(abs(best_month['Разница']))} ₽)")
-                if worst_month is not None:
-                    st.error(f"📈 **Худшая динамика:** {worst_month['Название']} — рост на {format_float(worst_month['Изменение_%'], 1)}% "
-                            f"({format_number(worst_month['Разница'])} ₽)")
+                if not comparison.empty and len(comparison) > 0:
+                    best_idx = comparison['Изменение_%'].idxmin()
+                    worst_idx = comparison['Изменение_%'].idxmax()
+                    
+                    if comparison.loc[best_idx, 'Изменение_%'] < 0:
+                        best_month = comparison.loc[best_idx]
+                        st.success(f"📉 **Лучшая динамика:** {best_month['Название']} — снижение на {format_float(abs(best_month['Изменение_%']), 1)}% "
+                                 f"({format_number(abs(best_month['Разница']))} ₽)")
+                    
+                    if comparison.loc[worst_idx, 'Изменение_%'] > 0:
+                        worst_month = comparison.loc[worst_idx]
+                        st.error(f"📈 **Худшая динамика:** {worst_month['Название']} — рост на {format_float(worst_month['Изменение_%'], 1)}% "
+                                f"({format_number(worst_month['Разница'])} ₽)")
             else:
                 st.info("Выберите разные годы для сравнения")
         else:
@@ -1845,7 +1861,7 @@ elif page == "🚚 Логистика Update":
         # ОСНОВНЫЕ МЕТРИКИ ЗА ВЫБРАННЫЙ ПЕРИОД
         # ==========================================
         st.divider()
-        st.subheader(f"📊 ИТОГИ ЗА {selected_month_display} {selected_year}")
+        st.subheader(f"📊 ИТОГИ ЗА {selected_month_display} {int(selected_year)}")
         
         total_plm = df_filtered['Сумма_PLM_до_PЦ'].sum()
         total_kz = df_filtered['Сумма_КЗ_до_PLM'].sum()
@@ -1866,7 +1882,8 @@ elif page == "🚚 Логистика Update":
             st.metric("📋 Заказов", f"{format_number(total_orders)}")
         
         if total_pallets > 0:
-            st.metric("📊 Средняя стоимость паллеты", f"{format_number(total_delivery / total_pallets)} ₽")
+            avg_pallet = total_delivery / total_pallets
+            st.metric("📊 Средняя стоимость паллеты", f"{format_number(avg_pallet)} ₽")
         
         # ТАБЛИЦА
         st.divider()
@@ -1877,13 +1894,14 @@ elif page == "🚚 Логистика Update":
             display_cols = [c for c in display_cols if c in df_filtered.columns]
             
             df_display = df_filtered[display_cols].copy()
-            for col in ['Сумма_КЗ_до_PLM', 'Сумма_PLM_до_PЦ']:
-                if col in df_display.columns:
-                    df_display[col] = df_display[col].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Сумма_КЗ_до_PLM' in df_display.columns:
+                df_display['Сумма_КЗ_до_PLM'] = df_display['Сумма_КЗ_до_PLM'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Сумма_PLM_до_PЦ' in df_display.columns:
+                df_display['Сумма_PLM_до_PЦ'] = df_display['Сумма_PLM_до_PЦ'].apply(lambda x: f"{format_number(x)} ₽")
             
             st.dataframe(df_display.head(100), use_container_width=True)
             
             csv_data = df_filtered[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-            st.download_button("📥 Скачать CSV", csv_data, f"logistics_update_{selected_year}_{selected_month}.csv", "text/csv")
+            st.download_button("📥 Скачать CSV", csv_data, f"logistics_update_{int(selected_year)}_{selected_month}.csv", "text/csv")
         else:
             st.info("Нет данных за выбранный период")
