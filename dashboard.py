@@ -175,9 +175,87 @@ def load_production_data():
         st.error(f"Ошибка загрузки производственных данных: {e}")
         return pd.DataFrame()
 
+@st.cache_data
+def load_logistics_update_data():
+    try:
+        # Читаем файл с заголовками
+        df = pd.read_excel('BI logisticks.xlsx', header=0)
+        
+        # Удаляем строки, где все значения NaN (пустые строки)
+        df = df.dropna(how='all')
+        
+        # Удаляем строки, где нет города (это пустые или служебные строки)
+        if 'Город' in df.columns:
+            df = df[df['Город'].notna()]
+        
+        # Если после фильтрации нет данных, пробуем другой подход
+        if df.empty:
+            # Читаем без заголовков и ищем данные
+            df_raw = pd.read_excel('BI logisticks.xlsx', header=None)
+            # Ищем строку, где есть 'Город' - это заголовок
+            header_row = None
+            for i in range(min(30, len(df_raw))):
+                if 'Город' in str(df_raw.iloc[i].values):
+                    header_row = i
+                    break
+            
+            if header_row is not None:
+                # Устанавливаем заголовки
+                df_raw.columns = df_raw.iloc[header_row]
+                # Начинаем со следующей строки
+                df = df_raw.iloc[header_row + 1:].reset_index(drop=True)
+                # Удаляем строки с пустыми городами
+                if 'Город' in df.columns:
+                    df = df[df['Город'].notna()]
+        
+        # Если всё ещё пусто, создаем пустой DataFrame
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Преобразуем дату
+        if 'Дата отгрузки' in df.columns:
+            df['Дата'] = pd.to_datetime(df['Дата отгрузки'], errors='coerce')
+        elif 'Дата заказа' in df.columns:
+            df['Дата'] = pd.to_datetime(df['Дата заказа'], errors='coerce')
+        else:
+            df['Дата'] = pd.Timestamp.now()
+        
+        df['Год'] = df['Дата'].dt.year
+        df['Месяц'] = df['Дата'].dt.month
+        df['Месяц_название'] = df['Месяц'].map(month_names)
+        
+        # Преобразуем числовые колонки
+        numeric_cols = ['Итого доставка заказа от PLM до РЦ в т.ч. НДС',
+                        'Итого доставка заказа от PLM до РЦ. Без НДС',
+                        'НДС за доставку заказа от PLM до РЦ',
+                        'Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС',
+                        'Цена доставки этого заказа от КЗ до PLM.. Без НДС',
+                        'НДС за доставку этого заказа от КЗ до PLM.',
+                        'Итого совокупная Стоимость доставки 1 паллета без НДС',
+                        'Кол-во паллет в заказе']
+        
+        for col in numeric_cols:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        
+        # Создаем столбцы с суммами
+        df['Сумма_PLM_до_PЦ'] = df['Итого доставка заказа от PLM до РЦ в т.ч. НДС']
+        df['Сумма_КЗ_до_PLM'] = df['Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС']
+        
+        # Удаляем строки с нулевыми значениями (если все затраты = 0)
+        df = df[(df['Сумма_PLM_до_PЦ'] > 0) | (df['Сумма_КЗ_до_PLM'] > 0)]
+        
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Ошибка загрузки логистики update: {e}")
+        return pd.DataFrame()
+
 sales_df = load_sales_data()
 logistics_df = load_logistics_data()
 production_df = load_production_data()
+logistics_update_df = load_logistics_update_data()
 
 # ==========================================
 # 2. НАЗВАНИЯ МЕСЯЦЕВ
@@ -196,7 +274,7 @@ st.set_page_config(page_title="BI Портал", layout="wide")
 st.sidebar.title("📊 Навигация")
 page = st.sidebar.radio(
     "Выберите раздел",
-    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости", "🏭 Формирование себестоимости ПФ"]
+    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости", "🏭 Формирование себестоимости ПФ", "🚚 Логистика Update"]
 )
 
 # ==========================================
@@ -333,7 +411,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</td>'
+    html += '</table>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -1359,7 +1437,7 @@ elif page == "🏭 Формирование себестоимости ПФ":
                     ["По номеру (старые сверху)", "По номеру (новые сверху)", "По себестоимости (от низкой)", "По себестоимости (от высокой)"]
                 )
             
-                       # ==========================================
+            # ==========================================
             # ОБЩАЯ СТАТИСТИКА
             # ==========================================
             st.divider()
@@ -1388,15 +1466,12 @@ elif page == "🏭 Формирование себестоимости ПФ":
             if len(batches) >= 2:
                 st.subheader("💰 СРАВНЕНИЕ САМОЙ ДЕШЕВОЙ И САМОЙ ДОРОГОЙ ПАРТИИ")
                 
-                # Находим самую дешевую и самую дорогую партию
                 cheapest_batch = batches.loc[batches['Себестоимость_единицы'].idxmin()]
                 most_expensive_batch = batches.loc[batches['Себестоимость_единицы'].idxmax()]
                 
-                # Получаем сырьё для этих партий
                 cheapest_materials = materials[materials['Партия'].astype(str) == str(cheapest_batch['Партия'])]
                 expensive_materials = materials[materials['Партия'].astype(str) == str(most_expensive_batch['Партия'])]
                 
-                # Создаем две колонки для сравнения
                 col_left, col_right = st.columns(2)
                 
                 with col_left:
@@ -1447,7 +1522,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
                         for _, row in expensive_display.iterrows():
                             st.write(f"• {row['Сырье']}: {format_number(row['Себестоимость_на_единицу_продукции'])} ₽/шт. ({format_float(row['Доля_в_себестоимости'], 1)}%)")
                 
-                # Добавляем сравнение разницы
                 diff_cost = most_expensive_batch['Себестоимость_единицы'] - cheapest_batch['Себестоимость_единицы']
                 diff_percent = (diff_cost / cheapest_batch['Себестоимость_единицы'] * 100)
                 
@@ -1657,32 +1731,13 @@ elif page == "🏭 Формирование себестоимости ПФ":
                                            barmode='group',
                                            xaxis_tickangle=-45)
                     st.plotly_chart(fig_comp, use_container_width=True)
+
 # ==========================================
 # СТРАНИЦА 5: ЛОГИСТИКА UPDATE
 # ==========================================
 elif page == "🚚 Логистика Update":
     st.title("🚚 Аналитика логистики (обновленная)")
     st.markdown("### Данные по доставке от КЗ до PLM и от PLM до РЦ")
-    
-    # ВРЕМЕННАЯ ДИАГНОСТИКА
-    with st.expander("🔧 Диагностика загрузки файла"):
-        import os
-        st.write("Файлы в папке:", [f for f in os.listdir('.') if f.endswith('.xlsx')])
-        
-        try:
-            df_test = pd.read_excel('BI logisticks.xlsx', header=0)
-            st.write(f"Стандартное чтение: {len(df_test)} строк, {len(df_test.columns)} столбцов")
-            st.write(f"После удаления пустых строк: {df_test.dropna(how='all').shape[0]} строк")
-            if 'Город' in df_test.columns:
-                st.write(f"Строк с городом: {df_test[df_test['Город'].notna()].shape[0]}")
-                st.write("Примеры городов:", df_test['Город'].dropna().unique()[:5])
-        except Exception as e:
-            st.error(f"Ошибка: {e}")
-        
-        st.write(f"Итоговый DataFrame: {logistics_update_df.shape[0]} строк")
-        if not logistics_update_df.empty:
-            st.write("Первые 3 строки:")
-            st.dataframe(logistics_update_df.head(3))
     
     if logistics_update_df.empty:
         st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден или не удалось загрузить данные.")
