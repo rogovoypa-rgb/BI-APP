@@ -85,12 +85,15 @@ def load_logistics_data():
 def load_production_data():
     try:
         # Читаем файл без заголовков
-        df = pd.read_excel('production_data.xlsx', header=None)
+        df_raw = pd.read_excel('production_data.xlsx', header=None)
         
         records = []
         
-        for idx, row in df.iterrows():
-            # Получаем значения
+        for idx, row in df_raw.iterrows():
+            # Пропускаем строку с заголовком
+            if row[0] == 'Номенклатура':
+                continue
+            
             col0 = row[0] if pd.notna(row[0]) else None
             col1 = row[1] if pd.notna(row[1]) else None
             col2 = row[2] if pd.notna(row[2]) else None
@@ -98,52 +101,47 @@ def load_production_data():
             col4 = row[4] if pd.notna(row[4]) else None
             col5 = row[5] if pd.notna(row[5]) else None
             
-            # Пропускаем заголовок
-            if col0 == 'Номенклатура':
-                continue
-            
-            # Проверяем, является ли строка информацией о партии
-            if col5 is not None and col3 is not None:
+            # Проверяем, является ли строка партией (номер партии в col0, количество в col1, сумма в col3, себестоимость в col5)
+            if col0 is not None and col1 is not None and col3 is not None and col5 is not None:
                 try:
-                    cost_val = float(col5)
-                    qty_val = float(col3)
+                    batch_num = str(col0).strip()
+                    qty = float(str(col1).replace(',', '.'))
+                    sum_val = float(str(col3).replace(',', '.'))
+                    cost = float(str(col5).replace(',', '.'))
                     
-                    # Определяем номер партии
-                    batch_id = None
-                    if col0 is not None and (isinstance(col0, (int, float)) or (isinstance(col0, str) and str(col0).replace('.', '').isdigit())):
-                        batch_id = str(col0)
-                    elif col1 is not None and (isinstance(col1, (int, float)) or (isinstance(col1, str) and str(col1).replace('.', '').isdigit())):
-                        batch_id = str(col1)
-                    
-                    if batch_id is not None:
+                    # Если номер партии похож на дату (6 цифр) - это партия
+                    if batch_num.isdigit() and len(batch_num) == 6:
                         records.append({
                             'Тип': 'Партия',
-                            'Партия': batch_id,
-                            'Количество_выпущено': qty_val,
-                            'Себестоимость_единицы': cost_val,
+                            'Партия': batch_num,
+                            'Количество_выпущено': qty,
+                            'Себестоимость_единицы': cost,
                             'Сырье': None,
                             'Количество_сырья': None,
                             'Цена_сырья': None,
                             'Сумма_сырья': None,
-                            'Себестоимость_на_единицу_продукции': cost_val
+                            'Себестоимость_на_единицу_продукции': cost
                         })
                 except (ValueError, TypeError):
                     pass
             
-            # Проверяем, является ли строка информацией о сырье
-            if col0 is not None and col3 is not None and col4 is not None and col5 is not None:
+            # Проверяем, является ли строка сырьём (есть номенклатура, количество, сумма, себестоимость)
+            if col0 is not None and col2 is not None and col3 is not None and col4 is not None and col5 is not None:
+                # Пропускаем строки-партии
+                if col0 is not None and str(col0).isdigit() and len(str(col0)) == 6:
+                    continue
+                
                 try:
-                    # Определяем партию
+                    # Определяем партию (она может быть в col1 или col2)
                     batch_id = None
-                    if col1 is not None and (isinstance(col1, (int, float)) or (isinstance(col1, str) and str(col1).replace('.', '').isdigit())):
+                    if col1 is not None and str(col1).isdigit() and len(str(col1)) == 6:
                         batch_id = str(col1)
-                    elif col2 is not None and (isinstance(col2, (int, float)) or (isinstance(col2, str) and str(col2).replace('.', '').isdigit())):
+                    elif col2 is not None and str(col2).isdigit() and len(str(col2)) == 6:
                         batch_id = str(col2)
                     
                     if batch_id is not None:
-                        qty_raw = float(col3)
-                        sum_raw = float(col4)
-                        price_raw = sum_raw / qty_raw if qty_raw > 0 else 0
+                        qty_raw = float(str(col3).replace(',', '.'))
+                        sum_raw = float(str(col4).replace(',', '.'))
                         
                         records.append({
                             'Тип': 'Сырье',
@@ -152,7 +150,7 @@ def load_production_data():
                             'Себестоимость_единицы': None,
                             'Сырье': col0,
                             'Количество_сырья': qty_raw,
-                            'Цена_сырья': price_raw,
+                            'Цена_сырья': sum_raw / qty_raw if qty_raw > 0 else 0,
                             'Сумма_сырья': sum_raw,
                             'Себестоимость_на_единицу_продукции': None
                         })
@@ -161,7 +159,7 @@ def load_production_data():
         
         df_result = pd.DataFrame(records)
         
-        # Постобработка: добавляем себестоимость на единицу продукции для сырья
+        # Постобработка для сырья
         if not df_result.empty:
             for idx, row in df_result[df_result['Тип'] == 'Сырье'].iterrows():
                 batch = row['Партия']
@@ -1334,8 +1332,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
     st.markdown("### Анализ себестоимости продукта **П/Ф Дрип Гватемала Декаф 1шт.**")
     
-    production_df = load_production_data()
-    
     if production_df.empty:
         st.warning("⚠️ Файл 'production_data.xlsx' не найден или не удалось загрузить данные.")
         st.info("📌 Пожалуйста, добавьте файл с данными о производстве в папку с приложением.")
@@ -1351,22 +1347,17 @@ elif page == "🏭 Формирование себестоимости ПФ":
         batches = production_df[production_df['Тип'] == 'Партия'].copy()
         materials = production_df[production_df['Тип'] == 'Сырье'].copy()
         
-        st.success(f"✅ Загружено {len(batches)} партий и {len(materials)} записей о сырье")
-        
-        # Отладочная информация
-        with st.expander("🔧 Отладочная информация (только для проверки)"):
-            st.write(f"Партии: {len(batches)}")
-            st.write(f"Сырье: {len(materials)}")
-            if not batches.empty:
-                st.write("Примеры партий:")
-                st.dataframe(batches[['Партия', 'Количество_выпущено', 'Себестоимость_единицы']].head(10))
-            if not materials.empty:
-                st.write("Примеры сырья:")
-                st.dataframe(materials[['Партия', 'Сырье', 'Количество_сырья', 'Сумма_сырья']].head(10))
-        
-        if batches.empty:
-            st.warning("Не удалось распознать партии в файле. Проверьте структуру данных.")
+        if batches.empty and materials.empty:
+            st.warning("Не удалось распознать данные в файле. Проверьте структуру файла.")
+            with st.expander("🔧 Показать первые 20 строк файла для диагностики"):
+                df_raw = pd.read_excel('production_data.xlsx', header=None)
+                for i in range(min(20, len(df_raw))):
+                    row = df_raw.iloc[i].values
+                    non_empty = [str(x) for x in row[:8] if pd.notna(x)]
+                    st.write(f"Строка {i}: {non_empty}")
         else:
+            st.success(f"✅ Загружено {len(batches)} партий и {len(materials)} записей о сырье")
+            
             # ==========================================
             # ФИЛЬТРЫ
             # ==========================================
@@ -1539,7 +1530,7 @@ elif page == "🏭 Формирование себестоимости ПФ":
         # ==========================================
         # СРАВНЕНИЕ ПАРТИЙ
         # ==========================================
-        if not batches.empty and len(batches) >= 2:
+        if 'batches' in locals() and not batches.empty and len(batches) >= 2:
             st.subheader("🔄 СРАВНЕНИЕ ПАРТИЙ")
             
             col_comp1, col_comp2 = st.columns(2)
@@ -1556,8 +1547,8 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 batch1_info = batches[batches['Партия'].astype(str) == batch1].iloc[0]
                 batch2_info = batches[batches['Партия'].astype(str) == batch2].iloc[0]
                 
-                materials1 = materials[materials['Партия'].astype(str) == batch1]
-                materials2 = materials[materials['Партия'].astype(str) == batch2]
+                materials1 = materials[materials['Партия'].astype(str) == batch1] if 'materials' in locals() else pd.DataFrame()
+                materials2 = materials[materials['Партия'].astype(str) == batch2] if 'materials' in locals() else pd.DataFrame()
                 
                 st.write(f"### Сравнение партий: {batch1} vs {batch2}")
                 
