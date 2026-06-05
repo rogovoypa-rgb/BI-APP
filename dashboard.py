@@ -1334,8 +1334,10 @@ elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
     st.markdown("### Анализ себестоимости продукта **П/Ф Дрип Гватемала Декаф 1шт.**")
     
+    production_df = load_production_data()
+    
     if production_df.empty:
-        st.warning("⚠️ Файл 'production_data.xlsx' не найден.")
+        st.warning("⚠️ Файл 'production_data.xlsx' не найден или не удалось загрузить данные.")
         st.info("📌 Пожалуйста, добавьте файл с данными о производстве в папку с приложением.")
         
         import os
@@ -1351,30 +1353,43 @@ elif page == "🏭 Формирование себестоимости ПФ":
         
         st.success(f"✅ Загружено {len(batches)} партий и {len(materials)} записей о сырье")
         
-        # ==========================================
-        # ФИЛЬТРЫ
-        # ==========================================
-        st.divider()
+        # Отладочная информация
+        with st.expander("🔧 Отладочная информация (только для проверки)"):
+            st.write(f"Партии: {len(batches)}")
+            st.write(f"Сырье: {len(materials)}")
+            if not batches.empty:
+                st.write("Примеры партий:")
+                st.dataframe(batches[['Партия', 'Количество_выпущено', 'Себестоимость_единицы']].head(10))
+            if not materials.empty:
+                st.write("Примеры сырья:")
+                st.dataframe(materials[['Партия', 'Сырье', 'Количество_сырья', 'Сумма_сырья']].head(10))
         
-        col_filter1, col_filter2 = st.columns(2)
-        
-        with col_filter1:
-            batch_options = ['Все партии'] + sorted(batches['Партия'].astype(str).unique().tolist())
-            selected_batch = st.selectbox("📦 Выберите партию для детального анализа", batch_options)
-        
-        with col_filter2:
-            sort_by = st.selectbox(
-                "📊 Сортировка партий",
-                ["По номеру (старые сверху)", "По номеру (новые сверху)", "По себестоимости (от низкой)", "По себестоимости (от высокой)"]
-            )
-        
-        # ==========================================
-        # ОБЩАЯ СТАТИСТИКА
-        # ==========================================
-        st.divider()
-        st.subheader("📊 ОБЩАЯ СТАТИСТИКА")
-        
-        if not batches.empty:
+        if batches.empty:
+            st.warning("Не удалось распознать партии в файле. Проверьте структуру данных.")
+        else:
+            # ==========================================
+            # ФИЛЬТРЫ
+            # ==========================================
+            st.divider()
+            
+            col_filter1, col_filter2 = st.columns(2)
+            
+            with col_filter1:
+                batch_options = ['Все партии'] + sorted(batches['Партия'].astype(str).unique().tolist())
+                selected_batch = st.selectbox("📦 Выберите партию для детального анализа", batch_options)
+            
+            with col_filter2:
+                sort_by = st.selectbox(
+                    "📊 Сортировка партий",
+                    ["По номеру (старые сверху)", "По номеру (новые сверху)", "По себестоимости (от низкой)", "По себестоимости (от высокой)"]
+                )
+            
+            # ==========================================
+            # ОБЩАЯ СТАТИСТИКА
+            # ==========================================
+            st.divider()
+            st.subheader("📊 ОБЩАЯ СТАТИСТИКА")
+            
             avg_cost = batches['Себестоимость_единицы'].mean()
             min_cost = batches['Себестоимость_единицы'].min()
             max_cost = batches['Себестоимость_единицы'].max()
@@ -1389,13 +1404,12 @@ elif page == "🏭 Формирование себестоимости ПФ":
                 st.metric("💰 Средняя себестоимость", f"{format_number(avg_cost)} ₽/шт.")
             with c4:
                 st.metric("📊 Разброс", f"{format_number(min_cost)} - {format_number(max_cost)} ₽/шт.")
-        
-        st.divider()
-        
-        # ==========================================
-        # ГРАФИК ДИНАМИКИ СЕБЕСТОИМОСТИ ПО ПАРТИЯМ
-        # ==========================================
-        if not batches.empty:
+            
+            st.divider()
+            
+            # ==========================================
+            # ГРАФИК ДИНАМИКИ СЕБЕСТОИМОСТИ ПО ПАРТИЯМ
+            # ==========================================
             st.subheader("📈 ДИНАМИКА СЕБЕСТОИМОСТИ ПО ПАРТИЯМ")
             
             batches_sorted = batches.copy()
@@ -1440,14 +1454,13 @@ elif page == "🏭 Формирование себестоимости ПФ":
             st.plotly_chart(fig_cost, use_container_width=True)
             
             st.divider()
-        
-        # ==========================================
-        # ДЕТАЛЬНЫЙ АНАЛИЗ ВЫБРАННОЙ ПАРТИИ
-        # ==========================================
-        st.subheader("🔍 ДЕТАЛЬНЫЙ СОСТАВ СЕБЕСТОИМОСТИ")
-        
-        if selected_batch == 'Все партии':
-            if not batches.empty:
+            
+            # ==========================================
+            # ДЕТАЛЬНЫЙ АНАЛИЗ ВЫБРАННОЙ ПАРТИИ
+            # ==========================================
+            st.subheader("🔍 ДЕТАЛЬНЫЙ СОСТАВ СЕБЕСТОИМОСТИ")
+            
+            if selected_batch == 'Все партии':
                 st.write("### 📋 Все партии")
                 display_batches = batches[['Партия', 'Количество_выпущено', 'Себестоимость_единицы']].copy()
                 display_batches['Партия'] = display_batches['Партия'].astype(str)
@@ -1460,66 +1473,66 @@ elif page == "🏭 Формирование себестоимости ПФ":
                                          title='Гистограмма распределения себестоимости',
                                          labels={'Себестоимость_единицы': 'Себестоимость (₽/шт.)'})
                 st.plotly_chart(fig_hist, use_container_width=True)
-            
-        else:
-            batch_info = batches[batches['Партия'].astype(str) == selected_batch]
-            if batch_info.empty:
-                st.warning(f"Партия {selected_batch} не найдена")
+                
             else:
-                batch_info = batch_info.iloc[0]
-                batch_materials = materials[materials['Партия'].astype(str) == selected_batch]
-                
-                st.write(f"### 📦 Партия: {selected_batch}")
-                
-                col_info1, col_info2, col_info3 = st.columns(3)
-                with col_info1:
-                    st.metric("📦 Выпущено", f"{format_number(batch_info['Количество_выпущено'])} шт.")
-                with col_info2:
-                    st.metric("💰 Себестоимость единицы", f"{format_number(batch_info['Себестоимость_единицы'])} ₽/шт.")
-                with col_info3:
-                    total_cost = batch_info['Себестоимость_единицы'] * batch_info['Количество_выпущено']
-                    st.metric("💵 Общая себестоимость партии", f"{format_number(total_cost)} ₽")
-                
-                st.divider()
-                
-                if not batch_materials.empty:
-                    st.write("### 📋 Состав себестоимости партии")
-                    
-                    batch_materials['Доля_в_себестоимости'] = batch_materials['Себестоимость_на_единицу_продукции'] / batch_info['Себестоимость_единицы'] * 100
-                    
-                    display_materials = batch_materials[['Сырье', 'Количество_сырья', 'Цена_сырья', 'Себестоимость_на_единицу_продукции', 'Доля_в_себестоимости']].copy()
-                    display_materials['Цена_сырья'] = display_materials['Цена_сырья'].apply(lambda x: f"{format_number(x)} ₽")
-                    display_materials['Количество_сырья'] = display_materials['Количество_сырья'].apply(format_number)
-                    display_materials['Себестоимость_на_единицу_продукции'] = display_materials['Себестоимость_на_единицу_продукции'].apply(lambda x: f"{format_number(x)} ₽")
-                    display_materials['Доля_в_себестоимости'] = display_materials['Доля_в_себестоимости'].apply(lambda x: f"{format_float(x, 1)}%")
-                    
-                    st.dataframe(display_materials, use_container_width=True, hide_index=True)
-                    
-                    st.subheader("🥧 Структура себестоимости")
-                    fig_pie = px.pie(batch_materials, values='Себестоимость_на_единицу_продукции', names='Сырье',
-                                     title=f'Распределение затрат в партии {selected_batch}',
-                                     labels={'Себестоимость_на_единицу_продукции': 'Затраты (₽/шт.)'})
-                    st.plotly_chart(fig_pie, use_container_width=True)
-                    
-                    st.subheader("📊 Анализ сырья")
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        fig_bar = px.bar(batch_materials, x='Сырье', y='Цена_сырья',
-                                         title='Цена сырья',
-                                         labels={'Цена_сырья': 'Цена (₽)', 'Сырье': ''})
-                        fig_bar.update_layout(xaxis_tickangle=-45)
-                        st.plotly_chart(fig_bar, use_container_width=True)
-                    
-                    with col2:
-                        fig_qty = px.bar(batch_materials, x='Сырье', y='Количество_сырья',
-                                         title='Количество использованного сырья',
-                                         labels={'Количество_сырья': 'Количество', 'Сырье': ''})
-                        fig_qty.update_layout(xaxis_tickangle=-45)
-                        st.plotly_chart(fig_qty, use_container_width=True)
-                    
+                batch_info = batches[batches['Партия'].astype(str) == selected_batch]
+                if batch_info.empty:
+                    st.warning(f"Партия {selected_batch} не найдена")
                 else:
-                    st.info("Нет данных о составе сырья для этой партии")
+                    batch_info = batch_info.iloc[0]
+                    batch_materials = materials[materials['Партия'].astype(str) == selected_batch]
+                    
+                    st.write(f"### 📦 Партия: {selected_batch}")
+                    
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    with col_info1:
+                        st.metric("📦 Выпущено", f"{format_number(batch_info['Количество_выпущено'])} шт.")
+                    with col_info2:
+                        st.metric("💰 Себестоимость единицы", f"{format_number(batch_info['Себестоимость_единицы'])} ₽/шт.")
+                    with col_info3:
+                        total_cost = batch_info['Себестоимость_единицы'] * batch_info['Количество_выпущено']
+                        st.metric("💵 Общая себестоимость партии", f"{format_number(total_cost)} ₽")
+                    
+                    st.divider()
+                    
+                    if not batch_materials.empty:
+                        st.write("### 📋 Состав себестоимости партии")
+                        
+                        batch_materials['Доля_в_себестоимости'] = batch_materials['Себестоимость_на_единицу_продукции'] / batch_info['Себестоимость_единицы'] * 100
+                        
+                        display_materials = batch_materials[['Сырье', 'Количество_сырья', 'Цена_сырья', 'Себестоимость_на_единицу_продукции', 'Доля_в_себестоимости']].copy()
+                        display_materials['Цена_сырья'] = display_materials['Цена_сырья'].apply(lambda x: f"{format_number(x)} ₽")
+                        display_materials['Количество_сырья'] = display_materials['Количество_сырья'].apply(format_number)
+                        display_materials['Себестоимость_на_единицу_продукции'] = display_materials['Себестоимость_на_единицу_продукции'].apply(lambda x: f"{format_number(x)} ₽")
+                        display_materials['Доля_в_себестоимости'] = display_materials['Доля_в_себестоимости'].apply(lambda x: f"{format_float(x, 1)}%")
+                        
+                        st.dataframe(display_materials, use_container_width=True, hide_index=True)
+                        
+                        st.subheader("🥧 Структура себестоимости")
+                        fig_pie = px.pie(batch_materials, values='Себестоимость_на_единицу_продукции', names='Сырье',
+                                         title=f'Распределение затрат в партии {selected_batch}',
+                                         labels={'Себестоимость_на_единицу_продукции': 'Затраты (₽/шт.)'})
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                        
+                        st.subheader("📊 Анализ сырья")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            fig_bar = px.bar(batch_materials, x='Сырье', y='Цена_сырья',
+                                             title='Цена сырья',
+                                             labels={'Цена_сырья': 'Цена (₽)', 'Сырье': ''})
+                            fig_bar.update_layout(xaxis_tickangle=-45)
+                            st.plotly_chart(fig_bar, use_container_width=True)
+                        
+                        with col2:
+                            fig_qty = px.bar(batch_materials, x='Сырье', y='Количество_сырья',
+                                             title='Количество использованного сырья',
+                                             labels={'Количество_сырья': 'Количество', 'Сырье': ''})
+                            fig_qty.update_layout(xaxis_tickangle=-45)
+                            st.plotly_chart(fig_qty, use_container_width=True)
+                        
+                    else:
+                        st.info("Нет данных о составе сырья для этой партии")
         
         st.divider()
         
