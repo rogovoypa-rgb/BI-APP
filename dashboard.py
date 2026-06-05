@@ -1329,6 +1329,24 @@ elif page == "📊 Анализ себестоимости":
 # СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
+     # ВРЕМЕННАЯ ДИАГНОСТИКА
+    with st.expander("🔧 Детальная диагностика (временно)"):
+        import os
+        st.write("Файлы в папке:", os.listdir('.'))
+        
+        try:
+            df_test = pd.read_excel('production_data.xlsx', header=None)
+            st.write(f"Файл прочитан, строк: {len(df_test)}, столбцов: {len(df_test.columns)}")
+            st.write("Первые 5 строк:")
+            for i in range(min(5, len(df_test))):
+                st.write(f"Строка {i}: {df_test.iloc[i].values[:8].tolist()}")
+        except Exception as e:
+            st.error(f"Ошибка чтения: {e}")
+        
+        st.write(f"production_df пуст? {production_df.empty}")
+        if not production_df.empty:
+            st.write(f"production_df содержит {len(production_df)} записей")
+            st.write(production_df.head())
     st.title("🏭 Формирование себестоимости полуфабриката")
     st.markdown("### Анализ себестоимости продукта **П/Ф Дрип Гватемала Декаф 1шт.**")
     
