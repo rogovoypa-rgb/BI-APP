@@ -10,10 +10,63 @@ st.title("📋 Планирование и производство")
 st.markdown("### Управление производственным планом обжарок")
 
 # ==========================================
-# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ
+# ЗАГРУЗКА НОМЕНКЛАТУРЫ
+# ==========================================
+@st.cache_data
+def load_nomenclature():
+    try:
+        df = pd.read_excel('nomenclature.xlsx')
+        df = df.rename(columns={
+            'Код': 'Код',
+            'Артикул': 'Артикул',
+            'Наименование': 'Наименование',
+            'Наименование полное': 'Наименование_полное',
+            'Категория': 'Категория',
+            'Вес': 'Вес_кг',
+            'Свободно': 'Остаток',
+            'Тип': 'Тип'
+        })
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Ошибка загрузки номенклатуры: {e}")
+        return pd.DataFrame()
+
+nomenclature_df = load_nomenclature()
+
+# ==========================================
+# ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
+# ==========================================
+def format_number(value):
+    if pd.isna(value):
+        return "0"
+    try:
+        if isinstance(value, (int, float)):
+            if np.isinf(value) or np.isnan(value):
+                return "0"
+            return f"{int(value):,}".replace(",", " ")
+        return str(value)
+    except (ValueError, TypeError, OverflowError):
+        return "0"
+
+def format_float(value, decimals=1):
+    if pd.isna(value):
+        return "0"
+    try:
+        if isinstance(value, (int, float)):
+            if np.isinf(value) or np.isnan(value):
+                return "0"
+            formatted = f"{value:.{decimals}f}".replace(".", ",")
+            return formatted
+        return str(value)
+    except (ValueError, TypeError, OverflowError):
+        return "0"
+
+# ==========================================
+# ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ ПЛАНИРОВАНИЯ
 # ==========================================
 def load_planning_data():
-    """Загрузка данных планирования из Excel"""
     try:
         if os.path.exists('planning_data.xlsx'):
             df = pd.read_excel('planning_data.xlsx')
@@ -25,7 +78,6 @@ def load_planning_data():
         return []
 
 def save_planning_data(records):
-    """Сохранение данных планирования в Excel"""
     try:
         df = pd.DataFrame(records)
         df.to_excel('planning_data.xlsx', index=False)
@@ -41,7 +93,6 @@ if 'planning_data' not in st.session_state:
     st.session_state.planning_data = load_planning_data()
 
 if 'roasters_list' not in st.session_state:
-    # Загружаем список ростеров из сохраненных данных или используем стандартный
     roasters = set()
     for record in st.session_state.planning_data:
         roasters.add(record.get('Ростер', ''))
@@ -54,7 +105,6 @@ if 'roasters_list' not in st.session_state:
 # ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ПЛАНА ПО КЛЮЧУ
 # ==========================================
 def get_plan_dict(roaster, start_date, days):
-    """Получает план в виде словаря для отображения"""
     plan_dict = {}
     dates = [start_date + timedelta(days=i) for i in range(days)]
     
@@ -62,7 +112,6 @@ def get_plan_dict(roaster, start_date, days):
         date_str = date.strftime('%Y-%m-%d')
         plan_dict[date_str] = {}
         for slot in range(1, 31):
-            # Ищем сохраненные данные
             found = False
             for record in st.session_state.planning_data:
                 if (record.get('Ростер') == roaster and 
@@ -90,14 +139,11 @@ def get_plan_dict(roaster, start_date, days):
     return plan_dict
 
 def save_slot(roaster, date_str, slot_num, slot_data):
-    """Сохраняет данные одного слота"""
-    # Удаляем старую запись если есть
     st.session_state.planning_data = [
         r for r in st.session_state.planning_data 
         if not (r.get('Ростер') == roaster and r.get('Дата') == date_str and r.get('Слот') == slot_num)
     ]
     
-    # Добавляем новую
     st.session_state.planning_data.append({
         'Ростер': roaster,
         'Дата': date_str,
@@ -110,13 +156,12 @@ def save_slot(roaster, date_str, slot_num, slot_data):
         'Выполнено': slot_data.get('выполнено', False)
     })
     
-    # Сохраняем в файл
     save_planning_data(st.session_state.planning_data)
 
 # ==========================================
 # ВКЛАДКИ
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["📅 План обжарок", "📊 Производственная статистика", "⚙️ Настройки"])
+tab1, tab2, tab3, tab4 = st.tabs(["📅 План обжарок", "📊 Производственная статистика", "📋 Справочник номенклатуры", "⚙️ Настройки"])
 
 # ==========================================
 # ВКЛАДКА 1: ПЛАН ОБЖАРОК
@@ -190,7 +235,6 @@ with tab1:
                         slot_num += 1
                 st.markdown("---")
     
-    # Экспорт плана
     st.divider()
     if st.button("📥 Экспортировать текущий план в Excel", use_container_width=True):
         rows = []
@@ -240,7 +284,7 @@ with tab2:
         st.metric("✅ Выполнено", format_number(total_completed))
     with col3:
         percent = (total_completed / total_planned * 100) if total_planned > 0 else 0
-        st.metric("📊 Процент выполнения", f"{percent:.1f}%")
+        st.metric("📊 Процент выполнения", f"{format_float(percent, 1)}%")
     with col4:
         roaster_count = len(roaster_stats)
         st.metric("🔥 Активных ростеров", roaster_count)
@@ -261,9 +305,96 @@ with tab2:
         st.dataframe(pd.DataFrame(stats_data), use_container_width=True, hide_index=True)
 
 # ==========================================
-# ВКЛАДКА 3: НАСТРОЙКИ
+# ВКЛАДКА 3: СПРАВОЧНИК НОМЕНКЛАТУРЫ
 # ==========================================
 with tab3:
+    st.subheader("📋 Справочник номенклатуры")
+    st.markdown("### Полный перечень товаров и материалов")
+    
+    if nomenclature_df.empty:
+        st.warning("⚠️ Файл 'nomenclature.xlsx' не найден или не удалось загрузить данные.")
+        st.info("📌 Пожалуйста, добавьте файл с номенклатурой в папку с приложением.")
+    else:
+        # Фильтры
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        
+        with col_f1:
+            categories = ['Все'] + sorted(nomenclature_df['Категория'].dropna().unique().tolist())
+            selected_category = st.selectbox("Категория", categories)
+        
+        with col_f2:
+            if 'Тип' in nomenclature_df.columns:
+                types = ['Все'] + sorted(nomenclature_df['Тип'].dropna().unique().tolist())
+                selected_type = st.selectbox("Тип", types)
+            else:
+                selected_type = 'Все'
+        
+        with col_f3:
+            search = st.text_input("🔎 Поиск по наименованию", placeholder="Введите название...")
+        
+        with col_f4:
+            hide_zero_stock = st.checkbox("📦 Скрыть позиции с нулевыми остатками", value=True)
+        
+        # Применяем фильтры
+        filtered_df = nomenclature_df.copy()
+        
+        if selected_category != 'Все':
+            filtered_df = filtered_df[filtered_df['Категория'] == selected_category]
+        if selected_type != 'Все' and 'Тип' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Тип'] == selected_type]
+        if search:
+            filtered_df = filtered_df[filtered_df['Наименование'].str.contains(search, case=False, na=False)]
+        if hide_zero_stock and 'Остаток' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Остаток'] > 0]
+        
+        st.divider()
+        
+        # Статистика
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            st.metric("📦 Всего позиций", format_number(len(filtered_df)))
+        with col_s2:
+            st.metric("📂 Категорий", format_number(filtered_df['Категория'].nunique()))
+        with col_s3:
+            if 'Остаток' in filtered_df.columns:
+                total_stock = filtered_df['Остаток'].sum()
+                st.metric("📊 Общий остаток", format_number(total_stock))
+            else:
+                st.metric("📊 Общий остаток", "нет данных")
+        with col_s4:
+            if 'Вес_кг' in filtered_df.columns and 'Остаток' in filtered_df.columns:
+                total_weight = (filtered_df['Вес_кг'] * filtered_df['Остаток']).sum()
+                st.metric("⚖️ Общий вес (кг)", format_number(total_weight))
+            else:
+                st.metric("⚖️ Общий вес (кг)", "нет данных")
+        
+        st.divider()
+        
+        # Таблица с данными
+        display_cols = ['Код', 'Артикул', 'Наименование', 'Категория', 'Вес_кг', 'Остаток']
+        if 'Тип' in filtered_df.columns:
+            display_cols.append('Тип')
+        
+        display_cols = [c for c in display_cols if c in filtered_df.columns]
+        
+        df_display = filtered_df[display_cols].copy()
+        
+        # Форматирование чисел
+        if 'Вес_кг' in df_display.columns:
+            df_display['Вес_кг'] = df_display['Вес_кг'].apply(lambda x: format_float(x, 2) if pd.notna(x) else "0")
+        if 'Остаток' in df_display.columns:
+            df_display['Остаток'] = df_display['Остаток'].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+        
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        # Кнопка экспорта
+        csv = filtered_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+        st.download_button("📥 Скачать справочник (CSV)", csv, "nomenclature_export.csv", "text/csv")
+
+# ==========================================
+# ВКЛАДКА 4: НАСТРОЙКИ
+# ==========================================
+with tab4:
     st.subheader("⚙️ Настройки")
     
     col1, col2 = st.columns(2)
