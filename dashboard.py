@@ -10,27 +10,27 @@ import os
 # ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
 # ==========================================
 def format_number(value):
-    if pd.isna(value):
-        return "0"
     try:
-        if isinstance(value, (int, float)):
-            if np.isinf(value) or np.isnan(value):
-                return "0"
-            return f"{int(value):,}".replace(",", " ")
-        return str(value)
+        if value is None or pd.isna(value):
+            return "0"
+        if hasattr(value, 'iloc'):
+            value = value.iloc[0] if len(value) > 0 else 0
+        num_val = float(value)
+        if np.isnan(num_val) or np.isinf(num_val):
+            return "0"
+        return f"{int(num_val):,}".replace(",", " ")
     except (ValueError, TypeError, OverflowError):
         return "0"
 
 def format_float(value, decimals=1):
-    if pd.isna(value):
-        return "0"
     try:
-        if isinstance(value, (int, float)):
-            if np.isinf(value) or np.isnan(value):
-                return "0"
-            formatted = f"{value:.{decimals}f}".replace(".", ",")
-            return formatted
-        return str(value)
+        if value is None or pd.isna(value):
+            return "0"
+        num_val = float(value)
+        if np.isnan(num_val) or np.isinf(num_val):
+            return "0"
+        formatted = f"{num_val:.{decimals}f}".replace(".", ",")
+        return formatted
     except (ValueError, TypeError, OverflowError):
         return "0"
 
@@ -71,12 +71,15 @@ def load_sales_data():
     df['Год'] = df['Дата'].dt.year
     df['Месяц_цифра'] = df['Дата'].dt.month
     
-    df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость без НДС']
+    # Используем себестоимость без НДС (столбец 19)
+    df['Себестоимость_без_НДС'] = pd.to_numeric(df['Себестоимость без НДС'], errors='coerce').fillna(0)
+    
+    df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость_без_НДС']
     df['Рентабельность_%'] = (df['Валовая_прибыль'] / df['Сумма без НДС'] * 100).fillna(0)
     
     df = df.rename(columns={
         'Сумма без НДС': 'Выручка_без_НДС',
-        'Себестоимость без НДС': 'Себестоимость',
+        'Себестоимость_без_НДС': 'Себестоимость',
         'Контрагент': 'Контрагент',
         'Номенклатура': 'Номенклатура'
     })
@@ -322,62 +325,125 @@ if page == "📈 Продажи":
     
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
-    # Добавляем данные по себестоимости в помесячную разбивку
-    monthly = df_year.groupby('Период.Месяц').agg({
+    # Безопасное создание monthly с проверкой наличия столбцов
+    agg_dict = {
         'Выручка_без_НДС': 'sum',
         'Валовая_прибыль': 'sum',
-        'Количество': 'sum',
-        'Себестоимость': 'sum'
-    }).reset_index()
+        'Количество': 'sum'
+    }
+    
+    # Добавляем себестоимость, если столбец существует
+    if 'Себестоимость' in df_year.columns and df_year['Себестоимость'].notna().any():
+        agg_dict['Себестоимость'] = 'sum'
+        show_cost = True
+    else:
+        show_cost = False
+    
+    monthly = df_year.groupby('Период.Месяц').agg(agg_dict).reset_index()
     monthly['Название'] = monthly['Период.Месяц'].map(month_names)
     monthly['Рентабельность'] = (monthly['Валовая_прибыль'] / monthly['Выручка_без_НДС'] * 100).fillna(0)
     monthly = monthly.sort_values('Период.Месяц')
     
+    if not show_cost:
+        monthly['Себестоимость'] = 0
+    
     def render_small_metric(label, value, suffix=""):
-        st.markdown(
-            f"""
-            <div style='
-                background-color: #F0F2F6;
-                border-radius: 10px;
-                padding: 10px;
-                text-align: center;
-            '>
-                <div style='font-size: 14px; color: #666; margin-bottom: 5px;'>{label}</div>
-                <div style='font-size: 20px; font-weight: bold; color: #1f1f1f;'>{value}{suffix}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        try:
+            if hasattr(value, 'iloc'):
+                val = value.iloc[0] if len(value) > 0 else 0
+            else:
+                val = value
+            
+            if pd.isna(val):
+                val = 0
+            
+            st.markdown(
+                f"""
+                <div style='
+                    background-color: #F0F2F6;
+                    border-radius: 10px;
+                    padding: 10px;
+                    text-align: center;
+                '>
+                    <div style='font-size: 14px; color: #666; margin-bottom: 5px;'>{label}</div>
+                    <div style='font-size: 20px; font-weight: bold; color: #1f1f1f;'>{format_number(val)}{suffix}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+        except Exception:
+            st.markdown(
+                f"""
+                <div style='
+                    background-color: #F0F2F6;
+                    border-radius: 10px;
+                    padding: 10px;
+                    text-align: center;
+                '>
+                    <div style='font-size: 14px; color: #666; margin-bottom: 5px;'>{label}</div>
+                    <div style='font-size: 20px; font-weight: bold; color: #1f1f1f;'>0{suffix}</div>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
     
     for _, row in monthly.iterrows():
-        cols = st.columns([1.5, 1, 1, 1, 1, 1])
-        with cols[0]:
-            st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
-        with cols[1]:
-            render_small_metric("Выручка", format_number(row['Выручка_без_НДС']), " ₽")
-        with cols[2]:
-            render_small_metric("Прибыль", format_number(row['Валовая_прибыль']), " ₽")
-        with cols[3]:
-            render_small_metric("Себестоимость", format_number(row['Себестоимость']), " ₽")
-        with cols[4]:
-            render_small_metric("Рентабельность", format_float(row['Рентабельность'], 1), "%")
-        with cols[5]:
-            render_small_metric("Кол-во (шт)", format_number(row['Количество']))
+        if show_cost:
+            cols = st.columns([1.5, 1, 1, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
+            with cols[1]:
+                render_small_metric("Выручка", row['Выручка_без_НДС'], " ₽")
+            with cols[2]:
+                render_small_metric("Прибыль", row['Валовая_прибыль'], " ₽")
+            with cols[3]:
+                render_small_metric("Себестоимость", row['Себестоимость'], " ₽")
+            with cols[4]:
+                render_small_metric("Рентабельность", row['Рентабельность'], "%")
+            with cols[5]:
+                render_small_metric("Кол-во (шт)", row['Количество'])
+        else:
+            cols = st.columns([1.5, 1, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
+            with cols[1]:
+                render_small_metric("Выручка", row['Выручка_без_НДС'], " ₽")
+            with cols[2]:
+                render_small_metric("Прибыль", row['Валовая_прибыль'], " ₽")
+            with cols[3]:
+                render_small_metric("Рентабельность", row['Рентабельность'], "%")
+            with cols[4]:
+                render_small_metric("Кол-во (шт)", row['Количество'])
     
     st.markdown("---")
-    total_cols = st.columns([1.5, 1, 1, 1, 1, 1])
-    with total_cols[0]:
-        st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
-    with total_cols[1]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
-    with total_cols[2]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
-    with total_cols[3]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(df_year['Себестоимость'].sum())} ₽</b></div>", unsafe_allow_html=True)
-    with total_cols[4]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
-    with total_cols[5]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
+    
+    if show_cost:
+        total_cols = st.columns([1.5, 1, 1, 1, 1, 1])
+        total_cost = df_year['Себестоимость'].sum()
+        with total_cols[0]:
+            st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
+        with total_cols[1]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
+        with total_cols[2]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
+        with total_cols[3]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(total_cost)} ₽</b></div>", unsafe_allow_html=True)
+        with total_cols[4]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+        with total_cols[5]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
+    else:
+        total_cols = st.columns([1.5, 1, 1, 1, 1])
+        with total_cols[0]:
+            st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
+        with total_cols[1]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
+        with total_cols[2]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
+        with total_cols[3]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+        with total_cols[4]:
+            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
     
     st.divider()
     
@@ -426,7 +492,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</table>'
+    html += '<table>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -642,7 +708,6 @@ elif page == "📋 Справочник номенклатуры":
                 if f.endswith('.xlsx'):
                     st.write(f"  - {f}")
     else:
-        # Фильтры
         st.subheader("🔍 Фильтры")
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
@@ -663,7 +728,6 @@ elif page == "📋 Справочник номенклатуры":
         with col_f4:
             hide_zero_stock = st.checkbox("📦 Скрыть позиции с нулевыми остатками", value=True)
         
-        # Применяем фильтры
         filtered_df = nomenclature_df.copy()
         
         if selected_category != 'Все':
@@ -677,7 +741,6 @@ elif page == "📋 Справочник номенклатуры":
         
         st.divider()
         
-        # Статистика
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         with col_s1:
             st.metric("📦 Всего позиций", format_number(len(filtered_df)))
@@ -698,7 +761,6 @@ elif page == "📋 Справочник номенклатуры":
         
         st.divider()
         
-        # Таблица с данными
         display_cols = ['Код', 'Артикул', 'Наименование', 'Категория', 'Вес_кг', 'Остаток']
         if 'Тип' in filtered_df.columns:
             display_cols.append('Тип')
@@ -707,7 +769,6 @@ elif page == "📋 Справочник номенклатуры":
         
         df_display = filtered_df[display_cols].copy()
         
-        # Форматирование чисел
         if 'Вес_кг' in df_display.columns:
             df_display['Вес_кг'] = df_display['Вес_кг'].apply(lambda x: format_float(x, 2) if pd.notna(x) else "0")
         if 'Остаток' in df_display.columns:
@@ -715,6 +776,5 @@ elif page == "📋 Справочник номенклатуры":
         
         st.dataframe(df_display, use_container_width=True, hide_index=True)
         
-        # Кнопка экспорта
         csv = filtered_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
         st.download_button("📥 Скачать справочник (CSV)", csv, "nomenclature_export.csv", "text/csv")
