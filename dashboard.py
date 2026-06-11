@@ -322,28 +322,14 @@ if page == "📈 Продажи":
     
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
-    # Безопасное создание monthly с проверкой наличия столбцов
-    agg_dict = {
+    monthly = df_year.groupby('Период.Месяц').agg({
         'Выручка_без_НДС': 'sum',
         'Валовая_прибыль': 'sum',
         'Количество': 'sum'
-    }
-    
-    # Добавляем себестоимость, если столбец существует и есть непустые значения
-    show_cost = False
-    if 'Себестоимость' in df_year.columns:
-        has_cost_values = df_year['Себестоимость'].notna().any()
-        if has_cost_values:
-            agg_dict['Себестоимость'] = 'sum'
-            show_cost = True
-    
-    monthly = df_year.groupby('Период.Месяц').agg(agg_dict).reset_index()
+    }).reset_index()
     monthly['Название'] = monthly['Период.Месяц'].map(month_names)
     monthly['Рентабельность'] = (monthly['Валовая_прибыль'] / monthly['Выручка_без_НДС'] * 100).fillna(0)
     monthly = monthly.sort_values('Период.Месяц')
-    
-    if not show_cost:
-        monthly['Себестоимость'] = 0
     
     def render_small_metric(label, value, suffix=""):
         try:
@@ -386,62 +372,30 @@ if page == "📈 Продажи":
             )
     
     for _, row in monthly.iterrows():
-        if show_cost:
-            cols = st.columns([1.5, 1, 1, 1, 1, 1])
-            with cols[0]:
-                st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
-            with cols[1]:
-                render_small_metric("Выручка", row['Выручка_без_НДС'], " ₽")
-            with cols[2]:
-                render_small_metric("Прибыль", row['Валовая_прибыль'], " ₽")
-            with cols[3]:
-                render_small_metric("Себестоимость", row['Себестоимость'], " ₽")
-            with cols[4]:
-                render_small_metric("Рентабельность", row['Рентабельность'], "%")
-            with cols[5]:
-                render_small_metric("Кол-во (шт)", row['Количество'])
-        else:
-            cols = st.columns([1.5, 1, 1, 1, 1])
-            with cols[0]:
-                st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
-            with cols[1]:
-                render_small_metric("Выручка", row['Выручка_без_НДС'], " ₽")
-            with cols[2]:
-                render_small_metric("Прибыль", row['Валовая_прибыль'], " ₽")
-            with cols[3]:
-                render_small_metric("Рентабельность", row['Рентабельность'], "%")
-            with cols[4]:
-                render_small_metric("Кол-во (шт)", row['Количество'])
+        cols = st.columns([1.5, 1, 1, 1, 1])
+        with cols[0]:
+            st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
+        with cols[1]:
+            render_small_metric("Выручка", row['Выручка_без_НДС'], " ₽")
+        with cols[2]:
+            render_small_metric("Прибыль", row['Валовая_прибыль'], " ₽")
+        with cols[3]:
+            render_small_metric("Рентабельность", row['Рентабельность'], "%")
+        with cols[4]:
+            render_small_metric("Кол-во (шт)", row['Количество'])
     
     st.markdown("---")
-    
-    if show_cost:
-        total_cols = st.columns([1.5, 1, 1, 1, 1, 1])
-        total_cost = df_year['Себестоимость'].sum()
-        with total_cols[0]:
-            st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
-        with total_cols[1]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
-        with total_cols[2]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
-        with total_cols[3]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(total_cost)} ₽</b></div>", unsafe_allow_html=True)
-        with total_cols[4]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
-        with total_cols[5]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
-    else:
-        total_cols = st.columns([1.5, 1, 1, 1, 1])
-        with total_cols[0]:
-            st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
-        with total_cols[1]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
-        with total_cols[2]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
-        with total_cols[3]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
-        with total_cols[4]:
-            st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
+    total_cols = st.columns([1.5, 1, 1, 1, 1])
+    with total_cols[0]:
+        st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
+    with total_cols[1]:
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_revenue)} ₽</b></div>", unsafe_allow_html=True)
+    with total_cols[2]:
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
+    with total_cols[3]:
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+    with total_cols[4]:
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
     
     st.divider()
     
@@ -480,7 +434,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</tr>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -490,7 +444,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</table>'
+    html += '<tr>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -776,4 +730,3 @@ elif page == "📋 Справочник номенклатуры":
         
         csv = filtered_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
         st.download_button("📥 Скачать справочник (CSV)", csv, "nomenclature_export.csv", "text/csv")
-        
