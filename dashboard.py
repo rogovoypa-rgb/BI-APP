@@ -38,6 +38,25 @@ def format_float(value, decimals=1):
 # 1. ЗАГРУЗКА ДАННЫХ
 # ==========================================
 @st.cache_data
+def load_nomenclature():
+    try:
+        df = pd.read_excel('nomenclature.xlsx')
+        df = df.rename(columns={
+            'Код': 'Код',
+            'Артикул': 'Артикул',
+            'Наименование': 'Наименование',
+            'Наименование полное': 'Наименование_полное',
+            'Категория': 'Категория',
+            'Вес': 'Вес_кг',
+            'Свободно': 'Остаток',
+            'Тип': 'Тип'
+        })
+        return df
+    except FileNotFoundError:
+        st.warning("⚠️ Файл nomenclature.xlsx не найден")
+        return pd.DataFrame()
+
+@st.cache_data
 def load_sales_data():
     df = pd.read_excel('sales_data.xlsx')
     
@@ -213,10 +232,12 @@ def load_logistics_update_data():
         st.error(f"Ошибка загрузки логистики update: {e}")
         return pd.DataFrame()
 
+# Загрузка всех данных
 sales_df = load_sales_data()
 logistics_df = load_logistics_data()
 production_df = load_production_data()
 logistics_update_df = load_logistics_update_data()
+nomenclature_df = load_nomenclature()
 
 # ==========================================
 # 2. НАЗВАНИЯ МЕСЯЦЕВ
@@ -233,14 +254,21 @@ month_names = {
 st.set_page_config(page_title="BI Портал", layout="wide")
 
 st.sidebar.title("📊 Навигация")
+
+# Показываем статус загрузки номенклатуры в sidebar
+if not nomenclature_df.empty:
+    st.sidebar.success(f"✅ Номенклатура: {len(nomenclature_df)} позиций")
+else:
+    st.sidebar.warning("⚠️ Номенклатура не загружена")
+
 page = st.sidebar.radio(
     "Выберите раздел",
     ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости", "🏭 Формирование себестоимости ПФ", 
-     "🚚 Логистика Update", "🏭 Аналитика производства"]
+     "🚚 Логистика Update", "🏭 Аналитика производства", "📋 Справочник номенклатуры"]
 )
 
 # ==========================================
-# СТРАНИЦА 1: ПРОДАЖИ
+# СТРАНИЦА 1: ПРОДАЖИ (полная версия из предыдущего кода)
 # ==========================================
 if page == "📈 Продажи":
     st.title("📊 BI Портал аналитики продаж")
@@ -380,7 +408,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</table>'
+    html += '<tr>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -459,7 +487,7 @@ if page == "📈 Продажи":
     st.caption(f"📅 {selected_month_display} {selected_year} | Записей: {format_number(len(df_filtered))}")
 
 # ==========================================
-# СТРАНИЦА 2: ЛОГИСТИКА (сокращена для краткости, но функциональна)
+# СТРАНИЦА 2: ЛОГИСТИКА (базовая)
 # ==========================================
 elif page == "🚚 Логистика":
     st.title("🚚 Аналитика затрат на логистику")
@@ -467,24 +495,10 @@ elif page == "🚚 Логистика":
     if logistics_df.empty:
         st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
     else:
-        df_log = logistics_df.copy()
-        
-        if 'Дата заказа' in df_log.columns:
-            df_log['Дата'] = pd.to_datetime(df_log['Дата заказа'], errors='coerce')
-        else:
-            df_log['Дата'] = pd.Timestamp.now()
-        
-        df_log['Год'] = df_log['Дата'].dt.year
-        df_log['Месяц'] = df_log['Дата'].dt.month
-        df_log['Месяц_название'] = df_log['Месяц'].map(month_names)
-        
-        df_log['План'] = pd.to_numeric(df_log['Плановая цена PLM'], errors='coerce')
-        df_log['Факт'] = pd.to_numeric(df_log['Фактическая цена PLM'], errors='coerce')
-        
-        st.dataframe(df_log.head(100), use_container_width=True)
+        st.dataframe(logistics_df.head(100), use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ
+# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ (базовая)
 # ==========================================
 elif page == "📊 Анализ себестоимости":
     st.title("📊 Анализ себестоимости продукции")
@@ -496,7 +510,7 @@ elif page == "📊 Анализ себестоимости":
     st.dataframe(df_cost[['Номенклатура', 'Себестоимость_единицы', 'Дата']].head(100), use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
+# СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ (базовая)
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
@@ -508,7 +522,7 @@ elif page == "🏭 Формирование себестоимости ПФ":
         st.dataframe(batches.head(100), use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 5: ЛОГИСТИКА UPDATE
+# СТРАНИЦА 5: ЛОГИСТИКА UPDATE (базовая)
 # ==========================================
 elif page == "🚚 Логистика Update":
     st.title("🚚 Аналитика логистики (обновленная)")
@@ -525,7 +539,6 @@ elif page == "🏭 Аналитика производства":
     st.title("🏭 Аналитика производства")
     st.markdown("### Статистика выполнения производственных планов")
     
-    # Загрузка данных планирования
     planning_df = pd.DataFrame()
     try:
         if os.path.exists('planning_data.xlsx'):
@@ -537,7 +550,6 @@ elif page == "🏭 Аналитика производства":
         st.info("📌 Нет данных о производственных планах.")
         st.caption("Данные загружаются из приложения 'Планирование и производство' (файл planning_data.xlsx)")
     else:
-        # Преобразование типов
         if 'Дата' in planning_df.columns:
             planning_df['Дата'] = pd.to_datetime(planning_df['Дата'], errors='coerce')
         if 'Запланировано' in planning_df.columns:
@@ -545,7 +557,6 @@ elif page == "🏭 Аналитика производства":
         if 'Выполнено' in planning_df.columns:
             planning_df['Выполнено'] = planning_df['Выполнено'].astype(bool) if planning_df['Выполнено'].dtype == 'object' else planning_df['Выполнено']
         
-        # Общая статистика
         total_planned = planning_df[planning_df['Запланировано'] == True].shape[0] if 'Запланировано' in planning_df.columns else 0
         total_completed = planning_df[planning_df['Выполнено'] == True].shape[0] if 'Выполнено' in planning_df.columns else 0
         
@@ -561,7 +572,6 @@ elif page == "🏭 Аналитика производства":
             roasters = planning_df['Ростер'].nunique() if 'Ростер' in planning_df.columns else 0
             st.metric("🔥 Задействовано ростеров", format_number(roasters))
         
-        # Статистика по ростерам
         if 'Ростер' in planning_df.columns and 'Запланировано' in planning_df.columns:
             st.divider()
             st.subheader("📊 Статистика по ростерам")
@@ -577,7 +587,6 @@ elif page == "🏭 Аналитика производства":
             
             st.dataframe(roaster_stats, use_container_width=True, hide_index=True)
         
-        # Динамика по дням
         if 'Дата' in planning_df.columns and 'Запланировано' in planning_df.columns:
             st.divider()
             st.subheader("📈 Динамика выполнения плана")
@@ -594,41 +603,76 @@ elif page == "🏭 Аналитика производства":
                 fig = go.Figure()
                 fig.add_trace(go.Bar(name='Запланировано', x=daily_stats['Дата'], y=daily_stats['Запланировано'], marker_color='#2E86AB'))
                 fig.add_trace(go.Bar(name='Выполнено', x=daily_stats['Дата'], y=daily_stats['Выполнено'], marker_color='#52B788'))
-                fig.update_layout(
-                    title='Ежедневная статистика',
-                    barmode='group',
-                    xaxis_title='Дата',
-                    yaxis_title='Количество батчей',
-                    height=450
-                )
+                fig.update_layout(title='Ежедневная статистика', barmode='group', xaxis_title='Дата', yaxis_title='Количество батчей', height=450)
                 st.plotly_chart(fig, use_container_width=True)
+
+# ==========================================
+# СТРАНИЦА 7: СПРАВОЧНИК НОМЕНКЛАТУРЫ
+# ==========================================
+elif page == "📋 Справочник номенклатуры":
+    st.title("📋 Справочник номенклатуры")
+    st.markdown("### Полный перечень товаров и материалов")
+    
+    if nomenclature_df.empty:
+        st.warning("⚠️ Файл 'nomenclature.xlsx' не найден")
+        st.info("📌 Пожалуйста, добавьте файл с номенклатурой в папку с приложением")
+    else:
+        # Фильтры
+        st.subheader("🔍 Фильтры")
+        col_f1, col_f2, col_f3 = st.columns(3)
         
-        # Топ кофе по количеству обжарок
-        if 'Кофе' in planning_df.columns and 'Запланировано' in planning_df.columns:
-            st.divider()
-            st.subheader("☕ Топ кофе по количеству обжарок")
-            
-            coffee_stats = planning_df[planning_df['Запланировано'] == True].groupby('Кофе').size().reset_index(name='Количество')
-            coffee_stats = coffee_stats[coffee_stats['Кофе'] != ''].sort_values('Количество', ascending=False).head(10)
-            
-            if not coffee_stats.empty:
-                fig_coffee = px.bar(coffee_stats, x='Количество', y='Кофе', orientation='h',
-                                     title='Топ-10 кофе по частоте обжарки',
-                                     color='Количество', color_continuous_scale='Oranges')
-                st.plotly_chart(fig_coffee, use_container_width=True)
+        with col_f1:
+            categories = ['Все'] + sorted(nomenclature_df['Категория'].dropna().unique().tolist())
+            selected_category = st.selectbox("Категория", categories)
         
-        # Таблица с детальными данными
+        with col_f2:
+            types = ['Все'] + sorted(nomenclature_df['Тип'].dropna().unique().tolist())
+            selected_type = st.selectbox("Тип", types)
+        
+        with col_f3:
+            search = st.text_input("🔎 Поиск по наименованию", placeholder="Введите название...")
+        
+        # Применяем фильтры
+        filtered_df = nomenclature_df.copy()
+        
+        if selected_category != 'Все':
+            filtered_df = filtered_df[filtered_df['Категория'] == selected_category]
+        if selected_type != 'Все':
+            filtered_df = filtered_df[filtered_df['Тип'] == selected_type]
+        if search:
+            filtered_df = filtered_df[filtered_df['Наименование'].str.contains(search, case=False, na=False)]
+        
         st.divider()
-        st.subheader("📋 Детальные данные")
         
-        display_cols = ['Дата', 'Ростер', 'Слот', 'Кофе', 'Вес_кг', 'Запланировано', 'Выполнено', 'Примечание']
-        display_cols = [c for c in display_cols if c in planning_df.columns]
+        # Статистика
+        col_s1, col_s2, col_s3, col_s4 = st.columns(4)
+        with col_s1:
+            st.metric("📦 Всего позиций", format_number(len(filtered_df)))
+        with col_s2:
+            st.metric("📂 Категорий", format_number(filtered_df['Категория'].nunique()))
+        with col_s3:
+            total_stock = filtered_df['Остаток'].sum() if 'Остаток' in filtered_df.columns else 0
+            st.metric("📊 Общий остаток", format_number(total_stock))
+        with col_s4:
+            total_weight = (filtered_df['Вес_кг'] * filtered_df['Остаток']).sum() if 'Вес_кг' in filtered_df.columns and 'Остаток' in filtered_df.columns else 0
+            st.metric("⚖️ Общий вес (кг)", format_number(total_weight))
         
-        if display_cols:
-            df_display = planning_df[display_cols].copy()
-            if 'Дата' in df_display.columns:
-                df_display['Дата'] = df_display['Дата'].dt.strftime('%Y-%m-%d')
-            st.dataframe(df_display.head(100), use_container_width=True)
-            
-            csv = planning_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-            st.download_button("📥 Скачать данные (CSV)", csv, "production_analytics.csv", "text/csv")
+        st.divider()
+        
+        # Таблица с данными
+        display_cols = ['Код', 'Артикул', 'Наименование', 'Категория', 'Вес_кг', 'Остаток', 'Тип']
+        display_cols = [c for c in display_cols if c in filtered_df.columns]
+        
+        df_display = filtered_df[display_cols].copy()
+        
+        # Форматирование чисел
+        if 'Вес_кг' in df_display.columns:
+            df_display['Вес_кг'] = df_display['Вес_кг'].apply(lambda x: format_float(x, 2) if pd.notna(x) else "0")
+        if 'Остаток' in df_display.columns:
+            df_display['Остаток'] = df_display['Остаток'].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+        
+        st.dataframe(df_display, use_container_width=True, hide_index=True)
+        
+        # Кнопка экспорта
+        csv = filtered_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+        st.download_button("📥 Скачать справочник (CSV)", csv, "nomenclature_export.csv", "text/csv")
