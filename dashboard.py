@@ -42,7 +42,6 @@ def load_nomenclature():
     try:
         df = pd.read_excel('nomenclature.xlsx')
         
-        # Переименовываем колонки
         df = df.rename(columns={
             'Код': 'Код',
             'Артикул': 'Артикул',
@@ -54,7 +53,6 @@ def load_nomenclature():
             'Тип': 'Тип'
         })
         
-        # Убеждаемся, что данные не пустые
         if df.empty:
             st.warning("Файл номенклатуры пуст")
             return pd.DataFrame()
@@ -275,6 +273,12 @@ page = st.sidebar.radio(
      "🚚 Логистика Update", "🏭 Аналитика производства", "📋 Справочник номенклатуры"]
 )
 
+# Кнопка принудительного обновления
+st.sidebar.divider()
+if st.sidebar.button("🔄 Принудительно обновить данные", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
+
 # ==========================================
 # СТРАНИЦА 1: ПРОДАЖИ
 # ==========================================
@@ -318,10 +322,12 @@ if page == "📈 Продажи":
     
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
+    # Добавляем данные по себестоимости в помесячную разбивку
     monthly = df_year.groupby('Период.Месяц').agg({
         'Выручка_без_НДС': 'sum',
         'Валовая_прибыль': 'sum',
-        'Количество': 'sum'
+        'Количество': 'sum',
+        'Себестоимость': 'sum'
     }).reset_index()
     monthly['Название'] = monthly['Период.Месяц'].map(month_names)
     monthly['Рентабельность'] = (monthly['Валовая_прибыль'] / monthly['Выручка_без_НДС'] * 100).fillna(0)
@@ -344,20 +350,22 @@ if page == "📈 Продажи":
         )
     
     for _, row in monthly.iterrows():
-        cols = st.columns([1.5, 1, 1, 1, 1])
+        cols = st.columns([1.5, 1, 1, 1, 1, 1])
         with cols[0]:
             st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
         with cols[1]:
-            render_small_metric("Выручка без НДС", format_number(row['Выручка_без_НДС']), " ₽")
+            render_small_metric("Выручка", format_number(row['Выручка_без_НДС']), " ₽")
         with cols[2]:
             render_small_metric("Прибыль", format_number(row['Валовая_прибыль']), " ₽")
         with cols[3]:
-            render_small_metric("Рентабельность", format_float(row['Рентабельность'], 1), "%")
+            render_small_metric("Себестоимость", format_number(row['Себестоимость']), " ₽")
         with cols[4]:
+            render_small_metric("Рентабельность", format_float(row['Рентабельность'], 1), "%")
+        with cols[5]:
             render_small_metric("Кол-во (шт)", format_number(row['Количество']))
     
     st.markdown("---")
-    total_cols = st.columns([1.5, 1, 1, 1, 1])
+    total_cols = st.columns([1.5, 1, 1, 1, 1, 1])
     with total_cols[0]:
         st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
     with total_cols[1]:
@@ -365,8 +373,10 @@ if page == "📈 Продажи":
     with total_cols[2]:
         st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
     with total_cols[3]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(df_year['Себестоимость'].sum())} ₽</b></div>", unsafe_allow_html=True)
     with total_cols[4]:
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+    with total_cols[5]:
         st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
     
     st.divider()
@@ -406,7 +416,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</tr>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
