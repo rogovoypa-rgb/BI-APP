@@ -41,7 +41,6 @@ def format_float(value, decimals=1):
 def load_nomenclature():
     try:
         df = pd.read_excel('nomenclature.xlsx')
-        
         df = df.rename(columns={
             'Код': 'Код',
             'Артикул': 'Артикул',
@@ -52,11 +51,9 @@ def load_nomenclature():
             'Свободно': 'Остаток',
             'Тип': 'Тип'
         })
-        
         if df.empty:
             st.warning("Файл номенклатуры пуст")
             return pd.DataFrame()
-        
         return df
     except Exception as e:
         st.error(f"Ошибка загрузки номенклатуры: {e}")
@@ -93,19 +90,15 @@ def load_sales_data():
 def load_logistics_data():
     try:
         df = pd.read_excel('logistics_data.xlsx', header=0)
-        
         if df is None or len(df) == 0:
             return pd.DataFrame()
-        
         if 'Строка содержит данные' in df.columns:
             df = df[df['Строка содержит данные'] == 1]
-        
         numeric_cols = ['Плановая цена PLM', 'Фактическая цена PLM', 'Доставка до PLM', 
                         'Стоимость доставки 1 паллета', 'Кол-во паллет']
         for col in numeric_cols:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        
         return df
     except FileNotFoundError:
         return pd.DataFrame()
@@ -117,13 +110,10 @@ def load_logistics_data():
 def load_production_data():
     try:
         df_raw = pd.read_excel('production_data.xlsx', header=None)
-        
         records = []
-        
         for idx, row in df_raw.iterrows():
             if row[0] == 'Номенклатура':
                 continue
-            
             col0 = row[0] if pd.notna(row[0]) else None
             col1 = row[1] if pd.notna(row[1]) else None
             col2 = row[2] if pd.notna(row[2]) else None
@@ -138,7 +128,6 @@ def load_production_data():
                     batch_num = str(col3).strip()
                     qty = float(str(col4).replace(',', '.'))
                     cost = float(str(col7).replace(',', '.'))
-                    
                     if batch_num.isdigit() and len(batch_num) == 6:
                         records.append({
                             'Тип': 'Партия',
@@ -158,12 +147,10 @@ def load_production_data():
                 try:
                     if col0 == 'П/Ф Дрип Гватемала Декаф 1шт.' or col0 == 'Дрип машина (Производство)':
                         continue
-                    
                     batch_id = str(col3).strip()
                     if batch_id.isdigit() and len(batch_id) == 6:
                         qty_raw = float(str(col5).replace(',', '.'))
                         sum_raw = float(str(col6).replace(',', '.'))
-                        
                         records.append({
                             'Тип': 'Сырье',
                             'Партия': batch_id,
@@ -179,7 +166,6 @@ def load_production_data():
                     pass
         
         df_result = pd.DataFrame(records)
-        
         if not df_result.empty:
             for idx, row in df_result[df_result['Тип'] == 'Сырье'].iterrows():
                 batch = row['Партия']
@@ -192,7 +178,6 @@ def load_production_data():
                         df_result.at[idx, 'Себестоимость_на_единицу_продукции'] = row['Сумма_сырья']
                 else:
                     df_result.at[idx, 'Себестоимость_на_единицу_продукции'] = row['Сумма_сырья']
-        
         return df_result
     except Exception as e:
         st.error(f"Ошибка загрузки производственных данных: {e}")
@@ -202,37 +187,30 @@ def load_production_data():
 def load_logistics_update_data():
     try:
         df = pd.read_excel('BI logisticks.xlsx', header=0)
-        
         if len(df.columns) >= 17:
             mask = pd.Series([True] * len(df))
             for i in range(8, 17):
                 mask = mask & df.iloc[:, i].notna()
             df = df[mask].copy()
-        
         if df.empty:
             return pd.DataFrame()
-        
         df['Сумма_PLM_до_PЦ'] = pd.to_numeric(df.iloc[:, 0], errors='coerce').fillna(0)
         df['Сумма_КЗ_до_PLM'] = pd.to_numeric(df.iloc[:, 3], errors='coerce').fillna(0)
         df['Кол_во_паллет'] = pd.to_numeric(df.iloc[:, 7], errors='coerce').fillna(0)
-        
         if len(df.columns) > 8:
             df['Город'] = df.iloc[:, 8]
         if len(df.columns) > 9:
             df['Дата_отгрузки'] = pd.to_datetime(df.iloc[:, 9], errors='coerce')
         if len(df.columns) > 10:
             df['Дата_заказа'] = pd.to_datetime(df.iloc[:, 10], errors='coerce')
-        
         if 'Дата_заказа' in df.columns and df['Дата_заказа'].notna().any():
             df['Дата'] = df['Дата_заказа']
         elif 'Дата_отгрузки' in df.columns:
             df['Дата'] = df['Дата_отгрузки']
         else:
             df['Дата'] = pd.Timestamp.now()
-        
         df['Год'] = df['Дата'].dt.year
         df['Месяц'] = df['Дата'].dt.month
-        
         return df
     except FileNotFoundError:
         return pd.DataFrame()
@@ -322,11 +300,27 @@ if page == "📈 Продажи":
     
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
-    monthly = df_year.groupby('Период.Месяц').agg({
-        'Выручка_без_НДС': 'sum',
-        'Валовая_прибыль': 'sum',
-        'Количество': 'sum'
-    }).reset_index()
+    # Проверяем наличие столбца себестоимости
+    has_cost_column = 'Себестоимость' in df_year.columns
+    
+    if has_cost_column:
+        monthly = df_year.groupby('Период.Месяц').agg({
+            'Выручка_без_НДС': 'sum',
+            'Валовая_прибыль': 'sum',
+            'Количество': 'sum',
+            'Себестоимость': 'sum'
+        }).reset_index()
+        monthly['Себестоимость'] = monthly['Себестоимость'].fillna(0)
+        show_cost = True
+    else:
+        monthly = df_year.groupby('Период.Месяц').agg({
+            'Выручка_без_НДС': 'sum',
+            'Валовая_прибыль': 'sum',
+            'Количество': 'sum'
+        }).reset_index()
+        monthly['Себестоимость'] = 0
+        show_cost = False
+    
     monthly['Название'] = monthly['Период.Месяц'].map(month_names)
     monthly['Рентабельность'] = (monthly['Валовая_прибыль'] / monthly['Выручка_без_НДС'] * 100).fillna(0)
     monthly = monthly.sort_values('Период.Месяц')
@@ -337,10 +331,8 @@ if page == "📈 Продажи":
                 val = value.iloc[0] if len(value) > 0 else 0
             else:
                 val = value
-            
             if pd.isna(val):
                 val = 0
-            
             st.markdown(
                 f"""
                 <div style='
@@ -372,7 +364,7 @@ if page == "📈 Продажи":
             )
     
     for _, row in monthly.iterrows():
-        cols = st.columns([1.5, 1, 1, 1, 1])
+        cols = st.columns([1.5, 1, 1, 1, 1, 1])
         with cols[0]:
             st.markdown(f"<div style='font-weight: bold; font-size: 16px; padding-top: 12px;'>{row['Название']}</div>", unsafe_allow_html=True)
         with cols[1]:
@@ -380,12 +372,17 @@ if page == "📈 Продажи":
         with cols[2]:
             render_small_metric("Прибыль", row['Валовая_прибыль'], " ₽")
         with cols[3]:
-            render_small_metric("Рентабельность", row['Рентабельность'], "%")
+            render_small_metric("Себестоимость", row['Себестоимость'], " ₽")
         with cols[4]:
+            render_small_metric("Рентабельность", row['Рентабельность'], "%")
+        with cols[5]:
             render_small_metric("Кол-во (шт)", row['Количество'])
     
     st.markdown("---")
-    total_cols = st.columns([1.5, 1, 1, 1, 1])
+    
+    total_cols = st.columns([1.5, 1, 1, 1, 1, 1])
+    total_cost = df_year['Себестоимость'].sum() if has_cost_column else 0
+    
     with total_cols[0]:
         st.markdown("<div style='font-weight: bold; font-size: 16px;'>📊 ИТОГО</div>", unsafe_allow_html=True)
     with total_cols[1]:
@@ -393,8 +390,10 @@ if page == "📈 Продажи":
     with total_cols[2]:
         st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_profit)} ₽</b></div>", unsafe_allow_html=True)
     with total_cols[3]:
-        st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_number(total_cost)} ₽</b></div>", unsafe_allow_html=True)
     with total_cols[4]:
+        st.markdown(f"<div style='font-size: 16px;'><b>{format_float(year_margin, 1)}%</b></div>", unsafe_allow_html=True)
+    with total_cols[5]:
         st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
     
     st.divider()
@@ -443,8 +442,8 @@ if page == "📈 Продажи":
         for m in available_months_num:
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
-        html += '</tr>'
-    html += '<tr>'
+        html += '</table>'
+    html += '</table>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -527,7 +526,6 @@ if page == "📈 Продажи":
 # ==========================================
 elif page == "🚚 Логистика":
     st.title("🚚 Аналитика затрат на логистику")
-    
     if logistics_df.empty:
         st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
     else:
@@ -538,11 +536,9 @@ elif page == "🚚 Логистика":
 # ==========================================
 elif page == "📊 Анализ себестоимости":
     st.title("📊 Анализ себестоимости продукции")
-    
     df_cost = sales_df.copy()
     df_cost['Себестоимость_единицы'] = df_cost['Себестоимость'] / df_cost['Количество']
     df_cost['Себестоимость_единицы'] = df_cost['Себестоимость_единицы'].replace([float('inf'), -float('inf')], 0).fillna(0)
-    
     st.dataframe(df_cost[['Номенклатура', 'Себестоимость_единицы', 'Дата']].head(100), use_container_width=True)
 
 # ==========================================
@@ -550,7 +546,6 @@ elif page == "📊 Анализ себестоимости":
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
-    
     if production_df.empty:
         st.warning("⚠️ Файл 'production_data.xlsx' не найден")
     else:
@@ -562,7 +557,6 @@ elif page == "🏭 Формирование себестоимости ПФ":
 # ==========================================
 elif page == "🚚 Логистика Update":
     st.title("🚚 Аналитика логистики (обновленная)")
-    
     if logistics_update_df.empty:
         st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден")
     else:
@@ -620,7 +614,6 @@ elif page == "🏭 Аналитика производства":
             roaster_stats.columns = ['Ростер', 'Выполнено', 'Запланировано']
             roaster_stats['Процент'] = (roaster_stats['Выполнено'] / roaster_stats['Запланировано'] * 100).fillna(0)
             roaster_stats['Процент'] = roaster_stats['Процент'].apply(lambda x: f"{format_float(x, 1)}%")
-            
             st.dataframe(roaster_stats, use_container_width=True, hide_index=True)
         
         if 'Дата' in planning_df.columns and 'Запланировано' in planning_df.columns:
