@@ -634,7 +634,7 @@ elif page == "📋 Справочник номенклатуры":
     else:
         # Фильтры
         st.subheader("🔍 Фильтры")
-        col_f1, col_f2, col_f3 = st.columns(3)
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         with col_f1:
             categories = ['Все'] + sorted(nomenclature_df['Категория'].dropna().unique().tolist())
@@ -650,6 +650,9 @@ elif page == "📋 Справочник номенклатуры":
         with col_f3:
             search = st.text_input("🔎 Поиск по наименованию", placeholder="Введите название...")
         
+        with col_f4:
+            hide_zero_stock = st.checkbox("📦 Скрыть позиции с нулевыми остатками", value=True)
+        
         # Применяем фильтры
         filtered_df = nomenclature_df.copy()
         
@@ -659,6 +662,8 @@ elif page == "📋 Справочник номенклатуры":
             filtered_df = filtered_df[filtered_df['Тип'] == selected_type]
         if search:
             filtered_df = filtered_df[filtered_df['Наименование'].str.contains(search, case=False, na=False)]
+        if hide_zero_stock and 'Остаток' in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df['Остаток'] > 0]
         
         st.divider()
         
