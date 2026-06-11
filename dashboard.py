@@ -13,6 +13,16 @@ for f in os.listdir('.'):
     if f.endswith('.xlsx'):
         st.sidebar.write(f"  - {f}")
 
+# ДИАГНОСТИКА ПРОБЛЕМЫ С НОМЕНКЛАТУРОЙ
+st.sidebar.write("### 🔧 Диагностика номенклатуры")
+try:
+    import pandas as pd
+    test_df = pd.read_excel('nomenclature.xlsx')
+    st.sidebar.success(f"✅ Файл читается: {len(test_df)} строк")
+    st.sidebar.write(f"Столбцы: {list(test_df.columns)[:5]}...")
+except Exception as e:
+    st.sidebar.error(f"❌ Ошибка: {e}")
+
 
 # ==========================================
 # ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
