@@ -6,24 +6,6 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import os
 
-# ВРЕМЕННАЯ ДИАГНОСТИКА - покажет, какие файлы видит приложение
-import os
-st.sidebar.write("### 📁 Файлы в папке:")
-for f in os.listdir('.'):
-    if f.endswith('.xlsx'):
-        st.sidebar.write(f"  - {f}")
-
-# ДИАГНОСТИКА ПРОБЛЕМЫ С НОМЕНКЛАТУРОЙ
-st.sidebar.write("### 🔧 Диагностика номенклатуры")
-try:
-    import pandas as pd
-    test_df = pd.read_excel('nomenclature.xlsx')
-    st.sidebar.success(f"✅ Файл читается: {len(test_df)} строк")
-    st.sidebar.write(f"Столбцы: {list(test_df.columns)[:5]}...")
-except Exception as e:
-    st.sidebar.error(f"❌ Ошибка: {e}")
-
-
 # ==========================================
 # ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
 # ==========================================
@@ -59,6 +41,8 @@ def format_float(value, decimals=1):
 def load_nomenclature():
     try:
         df = pd.read_excel('nomenclature.xlsx')
+        
+        # Переименовываем колонки
         df = df.rename(columns={
             'Код': 'Код',
             'Артикул': 'Артикул',
@@ -69,9 +53,15 @@ def load_nomenclature():
             'Свободно': 'Остаток',
             'Тип': 'Тип'
         })
+        
+        # Убеждаемся, что данные не пустые
+        if df.empty:
+            st.warning("Файл номенклатуры пуст")
+            return pd.DataFrame()
+        
         return df
-    except FileNotFoundError:
-        st.warning("⚠️ Файл nomenclature.xlsx не найден")
+    except Exception as e:
+        st.error(f"Ошибка загрузки номенклатуры: {e}")
         return pd.DataFrame()
 
 @st.cache_data
@@ -286,7 +276,7 @@ page = st.sidebar.radio(
 )
 
 # ==========================================
-# СТРАНИЦА 1: ПРОДАЖИ (полная версия из предыдущего кода)
+# СТРАНИЦА 1: ПРОДАЖИ
 # ==========================================
 if page == "📈 Продажи":
     st.title("📊 BI Портал аналитики продаж")
@@ -416,7 +406,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '<tr>'
+    html += '</tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -426,7 +416,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '<tr>'
+    html += '</table>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -505,7 +495,7 @@ if page == "📈 Продажи":
     st.caption(f"📅 {selected_month_display} {selected_year} | Записей: {format_number(len(df_filtered))}")
 
 # ==========================================
-# СТРАНИЦА 2: ЛОГИСТИКА (базовая)
+# СТРАНИЦА 2: ЛОГИСТИКА
 # ==========================================
 elif page == "🚚 Логистика":
     st.title("🚚 Аналитика затрат на логистику")
@@ -516,7 +506,7 @@ elif page == "🚚 Логистика":
         st.dataframe(logistics_df.head(100), use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ (базовая)
+# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ
 # ==========================================
 elif page == "📊 Анализ себестоимости":
     st.title("📊 Анализ себестоимости продукции")
@@ -528,7 +518,7 @@ elif page == "📊 Анализ себестоимости":
     st.dataframe(df_cost[['Номенклатура', 'Себестоимость_единицы', 'Дата']].head(100), use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ (базовая)
+# СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
@@ -540,7 +530,7 @@ elif page == "🏭 Формирование себестоимости ПФ":
         st.dataframe(batches.head(100), use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 5: ЛОГИСТИКА UPDATE (базовая)
+# СТРАНИЦА 5: ЛОГИСТИКА UPDATE
 # ==========================================
 elif page == "🚚 Логистика Update":
     st.title("🚚 Аналитика логистики (обновленная)")
@@ -632,8 +622,15 @@ elif page == "📋 Справочник номенклатуры":
     st.markdown("### Полный перечень товаров и материалов")
     
     if nomenclature_df.empty:
-        st.warning("⚠️ Файл 'nomenclature.xlsx' не найден")
-        st.info("📌 Пожалуйста, добавьте файл с номенклатурой в папку с приложением")
+        st.warning("⚠️ Файл 'nomenclature.xlsx' не найден или не удалось загрузить данные.")
+        st.info("📌 Пожалуйста, добавьте файл с номенклатурой в папку с приложением.")
+        
+        import os
+        with st.expander("🔧 Диагностика"):
+            st.write("Файлы в текущей папке:")
+            for f in os.listdir('.'):
+                if f.endswith('.xlsx'):
+                    st.write(f"  - {f}")
     else:
         # Фильтры
         st.subheader("🔍 Фильтры")
@@ -644,8 +641,11 @@ elif page == "📋 Справочник номенклатуры":
             selected_category = st.selectbox("Категория", categories)
         
         with col_f2:
-            types = ['Все'] + sorted(nomenclature_df['Тип'].dropna().unique().tolist())
-            selected_type = st.selectbox("Тип", types)
+            if 'Тип' in nomenclature_df.columns:
+                types = ['Все'] + sorted(nomenclature_df['Тип'].dropna().unique().tolist())
+                selected_type = st.selectbox("Тип", types)
+            else:
+                selected_type = 'Все'
         
         with col_f3:
             search = st.text_input("🔎 Поиск по наименованию", placeholder="Введите название...")
@@ -655,7 +655,7 @@ elif page == "📋 Справочник номенклатуры":
         
         if selected_category != 'Все':
             filtered_df = filtered_df[filtered_df['Категория'] == selected_category]
-        if selected_type != 'Все':
+        if selected_type != 'Все' and 'Тип' in filtered_df.columns:
             filtered_df = filtered_df[filtered_df['Тип'] == selected_type]
         if search:
             filtered_df = filtered_df[filtered_df['Наименование'].str.contains(search, case=False, na=False)]
@@ -669,16 +669,25 @@ elif page == "📋 Справочник номенклатуры":
         with col_s2:
             st.metric("📂 Категорий", format_number(filtered_df['Категория'].nunique()))
         with col_s3:
-            total_stock = filtered_df['Остаток'].sum() if 'Остаток' in filtered_df.columns else 0
-            st.metric("📊 Общий остаток", format_number(total_stock))
+            if 'Остаток' in filtered_df.columns:
+                total_stock = filtered_df['Остаток'].sum()
+                st.metric("📊 Общий остаток", format_number(total_stock))
+            else:
+                st.metric("📊 Общий остаток", "нет данных")
         with col_s4:
-            total_weight = (filtered_df['Вес_кг'] * filtered_df['Остаток']).sum() if 'Вес_кг' in filtered_df.columns and 'Остаток' in filtered_df.columns else 0
-            st.metric("⚖️ Общий вес (кг)", format_number(total_weight))
+            if 'Вес_кг' in filtered_df.columns and 'Остаток' in filtered_df.columns:
+                total_weight = (filtered_df['Вес_кг'] * filtered_df['Остаток']).sum()
+                st.metric("⚖️ Общий вес (кг)", format_number(total_weight))
+            else:
+                st.metric("⚖️ Общий вес (кг)", "нет данных")
         
         st.divider()
         
         # Таблица с данными
-        display_cols = ['Код', 'Артикул', 'Наименование', 'Категория', 'Вес_кг', 'Остаток', 'Тип']
+        display_cols = ['Код', 'Артикул', 'Наименование', 'Категория', 'Вес_кг', 'Остаток']
+        if 'Тип' in filtered_df.columns:
+            display_cols.append('Тип')
+        
         display_cols = [c for c in display_cols if c in filtered_df.columns]
         
         df_display = filtered_df[display_cols].copy()
