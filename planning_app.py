@@ -10,32 +10,6 @@ st.title("📋 Планирование и производство")
 st.markdown("### Управление производственным планом обжарок")
 
 # ==========================================
-# ЗАГРУЗКА НОМЕНКЛАТУРЫ
-# ==========================================
-@st.cache_data
-def load_nomenclature():
-    try:
-        df = pd.read_excel('nomenclature.xlsx')
-        df = df.rename(columns={
-            'Код': 'Код',
-            'Артикул': 'Артикул',
-            'Наименование': 'Наименование',
-            'Наименование полное': 'Наименование_полное',
-            'Категория': 'Категория',
-            'Вес': 'Вес_кг',
-            'Свободно': 'Остаток',
-            'Тип': 'Тип'
-        })
-        return df
-    except FileNotFoundError:
-        return pd.DataFrame()
-    except Exception as e:
-        st.error(f"Ошибка загрузки номенклатуры: {e}")
-        return pd.DataFrame()
-
-nomenclature_df = load_nomenclature()
-
-# ==========================================
 # ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
 # ==========================================
 def format_number(value):
@@ -62,6 +36,32 @@ def format_float(value, decimals=1):
         return str(value)
     except (ValueError, TypeError, OverflowError):
         return "0"
+
+# ==========================================
+# ЗАГРУЗКА НОМЕНКЛАТУРЫ
+# ==========================================
+@st.cache_data
+def load_nomenclature():
+    try:
+        df = pd.read_excel('nomenclature.xlsx')
+        df = df.rename(columns={
+            'Код': 'Код',
+            'Артикул': 'Артикул',
+            'Наименование': 'Наименование',
+            'Наименование полное': 'Наименование_полное',
+            'Категория': 'Категория',
+            'Вес': 'Вес_кг',
+            'Свободно': 'Остаток',
+            'Тип': 'Тип'
+        })
+        return df
+    except FileNotFoundError:
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Ошибка загрузки номенклатуры: {e}")
+        return pd.DataFrame()
+
+nomenclature_df = load_nomenclature()
 
 # ==========================================
 # ФУНКЦИИ ДЛЯ РАБОТЫ С ДАННЫМИ ПЛАНИРОВАНИЯ
@@ -100,6 +100,18 @@ if 'roasters_list' not in st.session_state:
         st.session_state.roasters_list = sorted(list(roasters))
     else:
         st.session_state.roasters_list = ["Ростер №1 (15кг)", "Ростер №2 (30кг)", "Ростер №3 (60кг)"]
+
+# Кнопка принудительного обновления в боковой панели
+st.sidebar.title("⚙️ Управление")
+if st.sidebar.button("🔄 Принудительно обновить данные", use_container_width=True):
+    st.cache_data.clear()
+    st.rerun()
+
+# Показываем статус номенклатуры
+if not nomenclature_df.empty:
+    st.sidebar.success(f"✅ Номенклатура: {len(nomenclature_df)} позиций")
+else:
+    st.sidebar.warning("⚠️ Номенклатура не загружена")
 
 # ==========================================
 # ФУНКЦИЯ ДЛЯ ПОЛУЧЕНИЯ ПЛАНА ПО КЛЮЧУ
@@ -315,7 +327,6 @@ with tab3:
         st.warning("⚠️ Файл 'nomenclature.xlsx' не найден или не удалось загрузить данные.")
         st.info("📌 Пожалуйста, добавьте файл с номенклатурой в папку с приложением.")
     else:
-        # Фильтры
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         with col_f1:
@@ -335,7 +346,6 @@ with tab3:
         with col_f4:
             hide_zero_stock = st.checkbox("📦 Скрыть позиции с нулевыми остатками", value=True)
         
-        # Применяем фильтры
         filtered_df = nomenclature_df.copy()
         
         if selected_category != 'Все':
@@ -349,7 +359,6 @@ with tab3:
         
         st.divider()
         
-        # Статистика
         col_s1, col_s2, col_s3, col_s4 = st.columns(4)
         with col_s1:
             st.metric("📦 Всего позиций", format_number(len(filtered_df)))
@@ -370,7 +379,6 @@ with tab3:
         
         st.divider()
         
-        # Таблица с данными
         display_cols = ['Код', 'Артикул', 'Наименование', 'Категория', 'Вес_кг', 'Остаток']
         if 'Тип' in filtered_df.columns:
             display_cols.append('Тип')
@@ -379,7 +387,6 @@ with tab3:
         
         df_display = filtered_df[display_cols].copy()
         
-        # Форматирование чисел
         if 'Вес_кг' in df_display.columns:
             df_display['Вес_кг'] = df_display['Вес_кг'].apply(lambda x: format_float(x, 2) if pd.notna(x) else "0")
         if 'Остаток' in df_display.columns:
@@ -387,7 +394,6 @@ with tab3:
         
         st.dataframe(df_display, use_container_width=True, hide_index=True)
         
-        # Кнопка экспорта
         csv = filtered_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
         st.download_button("📥 Скачать справочник (CSV)", csv, "nomenclature_export.csv", "text/csv")
 
