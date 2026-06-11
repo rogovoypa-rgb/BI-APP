@@ -71,7 +71,6 @@ def load_sales_data():
     df['Год'] = df['Дата'].dt.year
     df['Месяц_цифра'] = df['Дата'].dt.month
     
-    # Используем себестоимость без НДС (столбец 19)
     df['Себестоимость_без_НДС'] = pd.to_numeric(df['Себестоимость без НДС'], errors='coerce').fillna(0)
     
     df['Валовая_прибыль'] = df['Сумма без НДС'] - df['Себестоимость_без_НДС']
@@ -264,7 +263,6 @@ st.set_page_config(page_title="BI Портал", layout="wide")
 
 st.sidebar.title("📊 Навигация")
 
-# Показываем статус загрузки номенклатуры в sidebar
 if not nomenclature_df.empty:
     st.sidebar.success(f"✅ Номенклатура: {len(nomenclature_df)} позиций")
 else:
@@ -276,7 +274,6 @@ page = st.sidebar.radio(
      "🚚 Логистика Update", "🏭 Аналитика производства", "📋 Справочник номенклатуры"]
 )
 
-# Кнопка принудительного обновления
 st.sidebar.divider()
 if st.sidebar.button("🔄 Принудительно обновить данные", use_container_width=True):
     st.cache_data.clear()
@@ -332,12 +329,13 @@ if page == "📈 Продажи":
         'Количество': 'sum'
     }
     
-    # Добавляем себестоимость, если столбец существует
-    if 'Себестоимость' in df_year.columns and df_year['Себестоимость'].notna().any():
-        agg_dict['Себестоимость'] = 'sum'
-        show_cost = True
-    else:
-        show_cost = False
+    # Добавляем себестоимость, если столбец существует и есть непустые значения
+    show_cost = False
+    if 'Себестоимость' in df_year.columns:
+        has_cost_values = df_year['Себестоимость'].notna().any()
+        if has_cost_values:
+            agg_dict['Себестоимость'] = 'sum'
+            show_cost = True
     
     monthly = df_year.groupby('Период.Месяц').agg(agg_dict).reset_index()
     monthly['Название'] = monthly['Период.Месяц'].map(month_names)
@@ -482,7 +480,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '<tr>'
+    html += '</tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -492,7 +490,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '<table>'
+    html += '</table>'
     
     st.markdown(html, unsafe_allow_html=True)
     
@@ -778,3 +776,4 @@ elif page == "📋 Справочник номенклатуры":
         
         csv = filtered_df[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
         st.download_button("📥 Скачать справочник (CSV)", csv, "nomenclature_export.csv", "text/csv")
+        
