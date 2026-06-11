@@ -6,6 +6,14 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import os
 
+# ВРЕМЕННАЯ ДИАГНОСТИКА - покажет, какие файлы видит приложение
+import os
+st.sidebar.write("### 📁 Файлы в папке:")
+for f in os.listdir('.'):
+    if f.endswith('.xlsx'):
+        st.sidebar.write(f"  - {f}")
+
+
 # ==========================================
 # ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
 # ==========================================
