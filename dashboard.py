@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+from datetime import datetime, timedelta
 
 # ==========================================
 # ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ЧИСЕЛ
@@ -233,7 +234,7 @@ st.set_page_config(page_title="BI Портал", layout="wide")
 st.sidebar.title("📊 Навигация")
 page = st.sidebar.radio(
     "Выберите раздел",
-    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости", "🏭 Формирование себестоимости ПФ", "🚚 Логистика Update"]
+    ["📈 Продажи", "🚚 Логистика", "📊 Анализ себестоимости", "🏭 Формирование себестоимости ПФ", "🚚 Логистика Update", "📋 Планирование и производство"]
 )
 
 # ==========================================
@@ -367,7 +368,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</table>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -472,7 +473,6 @@ elif page == "🚚 Логистика":
                 if f.endswith('.xlsx'):
                     st.write(f"  - {f}")
     else:
-        # ПОДГОТОВКА ДАННЫХ
         df_log = logistics_df.copy()
         
         if 'Дата заказа' in df_log.columns:
@@ -515,7 +515,6 @@ elif page == "🚚 Логистика":
         else:
             df_log['Стоимость_товара_в_заказе'] = 0
         
-        # ВКЛАДКИ НА СТРАНИЦЕ ЛОГИСТИКИ
         tab1, tab2, tab3, tab4 = st.tabs(["📊 Общая аналитика", "📋 Логистика месяц+город+SKU+заказ", "📋 Логистика месяц+город+заказ", "📊 Сводка по городам"])
         
         # ВКЛАДКА 1: ОБЩАЯ АНАЛИТИКА
@@ -1843,3 +1842,224 @@ elif page == "🚚 Логистика Update":
             st.download_button("📥 Скачать CSV", csv_data, f"logistics_update_{selected_year}_{selected_month}.csv", "text/csv")
         else:
             st.info("Нет данных за выбранный период")
+
+# ==========================================
+# СТРАНИЦА 6: ПЛАНИРОВАНИЕ И ПРОИЗВОДСТВО
+# ==========================================
+elif page == "📋 Планирование и производство":
+    st.title("📋 Планирование и производство")
+    st.markdown("### Управление производственным планом")
+    
+    # Инициализация состояния для хранения планов
+    if 'roaster_plans' not in st.session_state:
+        st.session_state.roaster_plans = {}
+    if 'roasters_list' not in st.session_state:
+        st.session_state.roasters_list = ["Ростер №1 (15кг)", "Ростер №2 (30кг)", "Ростер №3 (60кг)"]
+    
+    # Вкладки на странице
+    tab1, tab2, tab3 = st.tabs(["📅 План обжарок", "📊 Производственная статистика", "⚙️ Настройки"])
+    
+    # ==========================================
+    # ВКЛАДКА 1: ПЛАН ОБЖАРОК
+    # ==========================================
+    with tab1:
+        st.subheader("📅 План обжарок по ростерам")
+        
+        # Выбор ростера
+        selected_roaster = st.selectbox("🔥 Выберите ростер", st.session_state.roasters_list, key="roaster_select")
+        
+        # Выбор периода
+        col_week1, col_week2 = st.columns(2)
+        with col_week1:
+            start_date = st.date_input("Начало периода", value=datetime.now(), key="plan_start")
+        with col_week2:
+            days_to_show = st.number_input("Количество дней", min_value=1, max_value=14, value=7, key="days_count")
+        
+        # Генерируем даты
+        dates = [start_date + timedelta(days=i) for i in range(days_to_show)]
+        
+        # Загрузка плана из файла
+        st.divider()
+        uploaded_plan = st.file_uploader("📂 Загрузить план из Excel/CSV", type=["xlsx", "csv"], key="upload_plan")
+        if uploaded_plan is not None:
+            try:
+                if uploaded_plan.name.endswith('.xlsx'):
+                    df_upload = pd.read_excel(uploaded_plan)
+                else:
+                    df_upload = pd.read_csv(uploaded_plan, sep=';')
+                
+                # Загружаем план в session_state
+                for _, row in df_upload.iterrows():
+                    roaster = row['Ростер']
+                    date = row['Дата']
+                    slot = int(row['Слот'])
+                    plan_key = f"{roaster}_{start_date}"
+                    
+                    if plan_key not in st.session_state.roaster_plans:
+                        st.session_state.roaster_plans[plan_key] = {}
+                    if date not in st.session_state.roaster_plans[plan_key]:
+                        st.session_state.roaster_plans[plan_key][date] = {}
+                    if slot not in st.session_state.roaster_plans[plan_key][date]:
+                        st.session_state.roaster_plans[plan_key][date][slot] = {}
+                    
+                    st.session_state.roaster_plans[plan_key][date][slot] = {
+                        'запланировано': row.get('Запланировано', False),
+                        'кофе': row.get('Кофе', ''),
+                        'вес': row.get('Вес_кг', 0),
+                        'примечание': row.get('Примечание', '')
+                    }
+                st.success(f"План загружен из {uploaded_plan.name}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Ошибка загрузки файла: {e}")
+        
+        # Инициализация плана для выбранного ростера, если его нет
+        plan_key = f"{selected_roaster}_{start_date}"
+        if plan_key not in st.session_state.roaster_plans:
+            st.session_state.roaster_plans[plan_key] = {}
+            for date in dates:
+                date_str = date.strftime('%Y-%m-%d')
+                st.session_state.roaster_plans[plan_key][date_str] = {}
+                for slot in range(1, 31):
+                    st.session_state.roaster_plans[plan_key][date_str][slot] = {
+                        'запланировано': False,
+                        'кофе': '',
+                        'вес': 0,
+                        'примечание': ''
+                    }
+        
+        current_plan = st.session_state.roaster_plans[plan_key]
+        
+        # Отображение плана по дням
+        for date in dates:
+            date_str = date.strftime('%Y-%m-%d')
+            day_name = date.strftime('%A')
+            day_names_ru = {
+                'Monday': 'Понедельник', 'Tuesday': 'Вторник', 'Wednesday': 'Среда',
+                'Thursday': 'Четверг', 'Friday': 'Пятница', 'Saturday': 'Суббота', 'Sunday': 'Воскресенье'
+            }
+            day_name_ru = day_names_ru.get(day_name, day_name)
+            
+            if date_str not in current_plan:
+                current_plan[date_str] = {}
+                for slot in range(1, 31):
+                    current_plan[date_str][slot] = {'запланировано': False, 'кофе': '', 'вес': 0, 'примечание': ''}
+            
+            with st.expander(f"📅 {date_str} - {day_name_ru}", expanded=(date == dates[0])):
+                planned_count = sum(1 for s in current_plan[date_str].values() if s['запланировано'])
+                st.caption(f"Всего слотов: 30 | Занято: {planned_count} | Свободно: {30 - planned_count}")
+                
+                slots_per_row = 6
+                slot_num = 1
+                
+                while slot_num <= 30:
+                    cols = st.columns(slots_per_row)
+                    for i, col in enumerate(cols):
+                        if slot_num <= 30:
+                            slot_data = current_plan[date_str][slot_num]
+                            slot_status = "🟢" if slot_data['запланировано'] else "⚪"
+                            slot_label = f"{slot_status} Слот {slot_num}"
+                            
+                            with col:
+                                with st.popover(slot_label, use_container_width=True):
+                                    st.write(f"**Слот {slot_num}**")
+                                    st.write(f"Время начала: {(slot_num-1)*15} мин")
+                                    
+                                    new_status = st.checkbox("Запланировано", value=slot_data['запланировано'], key=f"{date_str}_{selected_roaster}_slot_{slot_num}_status")
+                                    coffee_name = st.text_input("Название кофе", value=slot_data['кофе'], key=f"{date_str}_{selected_roaster}_slot_{slot_num}_coffee")
+                                    weight = st.number_input("Вес (кг)", min_value=0, max_value=100, value=slot_data['вес'], key=f"{date_str}_{selected_roaster}_slot_{slot_num}_weight")
+                                    note = st.text_area("Примечание", value=slot_data['примечание'], key=f"{date_str}_{selected_roaster}_slot_{slot_num}_note", height=68)
+                                    
+                                    if st.button("💾 Сохранить", key=f"{date_str}_{selected_roaster}_slot_{slot_num}_save"):
+                                        current_plan[date_str][slot_num]['запланировано'] = new_status
+                                        current_plan[date_str][slot_num]['кофе'] = coffee_name
+                                        current_plan[date_str][slot_num]['вес'] = weight
+                                        current_plan[date_str][slot_num]['примечание'] = note
+                                        st.rerun()
+                            
+                            slot_num += 1
+                    st.markdown("---")
+        
+        # Кнопка сохранения плана
+        st.divider()
+        col_save1, col_save2, col_save3 = st.columns(3)
+        with col_save2:
+            if st.button("💾 Сохранить план в Excel", use_container_width=True):
+                rows = []
+                for date, slots in current_plan.items():
+                    for slot_num, slot_data in slots.items():
+                        rows.append({
+                            'Дата': date,
+                            'Ростер': selected_roaster,
+                            'Слот': slot_num,
+                            'Время_начала': f"{(slot_num-1)*15} мин",
+                            'Запланировано': slot_data['запланировано'],
+                            'Кофе': slot_data['кофе'],
+                            'Вес_кг': slot_data['вес'],
+                            'Примечание': slot_data['примечание']
+                        })
+                df_plan = pd.DataFrame(rows)
+                csv = df_plan.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                st.download_button("📥 Скачать план (CSV)", csv, f"roaster_plan_{selected_roaster}_{start_date}.csv", "text/csv")
+                st.success("План сохранен!")
+    
+    # ==========================================
+    # ВКЛАДКА 2: ПРОИЗВОДСТВЕННАЯ СТАТИСТИКА
+    # ==========================================
+    with tab2:
+        st.subheader("📊 Производственная статистика")
+        
+        # Статистика по всем планам
+        total_planned = 0
+        total_actual = 0
+        
+        for plan_key, plan_data in st.session_state.roaster_plans.items():
+            for date, slots in plan_data.items():
+                for slot_data in slots.values():
+                    if slot_data['запланировано']:
+                        total_planned += 1
+                        if slot_data.get('выполнено', False):
+                            total_actual += 1
+        
+        col_stat1, col_stat2, col_stat3, col_stat4 = st.columns(4)
+        with col_stat1:
+            st.metric("📦 Всего запланировано батчей", format_number(total_planned))
+        with col_stat2:
+            st.metric("✅ Выполнено батчей", format_number(total_actual))
+        with col_stat3:
+            percent = (total_actual / total_planned * 100) if total_planned > 0 else 0
+            st.metric("📊 Процент выполнения", f"{format_float(percent, 1)}%")
+        with col_stat4:
+            roaster_load = (total_planned / (len(st.session_state.roaster_plans) * 30)) * 100 if st.session_state.roaster_plans else 0
+            st.metric("🔥 Загруженность ростеров", f"{format_float(roaster_load, 1)}%")
+        
+        st.info("ℹ️ Для отметки выполнения батчей используйте чекбокс 'Выполнено' в карточке слота")
+    
+    # ==========================================
+    # ВКЛАДКА 3: НАСТРОЙКИ
+    # ==========================================
+    with tab3:
+        st.subheader("⚙️ Настройки производства")
+        
+        col_set1, col_set2 = st.columns(2)
+        with col_set1:
+            new_roaster = st.text_input("➕ Добавить новый ростер")
+            if st.button("Добавить", use_container_width=True):
+                if new_roaster and new_roaster not in st.session_state.roasters_list:
+                    st.session_state.roasters_list.append(new_roaster)
+                    st.success(f"Ростер '{new_roaster}' добавлен!")
+                    st.rerun()
+            
+            st.write("**Текущие ростера:**")
+            for r in st.session_state.roasters_list:
+                st.write(f"- {r}")
+        
+        with col_set2:
+            batch_duration = st.number_input("⏱️ Длительность батча (минут)", min_value=5, max_value=60, value=15)
+            slots_per_shift = st.number_input("🔢 Количество батчей в смену", min_value=1, max_value=60, value=30)
+            st.success(f"Текущие настройки: {batch_duration} мин/батч, {slots_per_shift} батчей в смену")
+            
+            if st.button("🗑️ Очистить все планы", use_container_width=True):
+                st.session_state.roaster_plans = {}
+                st.success("Все планы очищены!")
+                st.rerun()
