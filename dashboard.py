@@ -485,8 +485,8 @@ if page == "📈 Продажи":
         with col_headers[5]:
             st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
         
-        # Разделительная линия
-        st.markdown("<hr style='margin: 5px 0px;'>", unsafe_allow_html=True)
+        # Разделительная линия под заголовками (синяя, #2E86AB)
+        st.markdown("<hr style='margin: 5px 0px; border: 1px solid #2E86AB;'>", unsafe_allow_html=True)
         
         # Помесячные данные
         for _, row in customer_monthly.iterrows():
@@ -503,6 +503,82 @@ if page == "📈 Продажи":
                 st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_float(row['Рентабельность'], 1)}%</div>", unsafe_allow_html=True)
             with cols[5]:
                 st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
+        
+        # Кнопка "Подробнее"
+        if st.button(f"📊 Подробнее по {customer_name}", key=f"btn_{customer_name}"):
+            # Создаем popup (используем dialog или expander)
+            with st.expander(f"📋 Детализация по {customer_name} в разрезе Подгрупп", expanded=True):
+                # Группируем по Подгруппам (столбец 13, индекс 12)
+                # Находим столбец 'Подгруппа' в данных
+                subgroup_col = None
+                for col in df_customer.columns:
+                    if 'подгрупп' in str(col).lower():
+                        subgroup_col = col
+                        break
+                
+                if subgroup_col is None:
+                    st.warning("Столбец 'Подгруппа' не найден в данных")
+                else:
+                    # Агрегируем по месяцам и подгруппам
+                    if has_cost_column:
+                        subgroup_data = df_customer.groupby(['Период.Месяц', subgroup_col]).agg({
+                            'Выручка_без_НДС': 'sum',
+                            'Валовая_прибыль': 'sum',
+                            'Количество': 'sum',
+                            'Себестоимость': 'sum'
+                        }).reset_index()
+                        subgroup_data['Себестоимость'] = subgroup_data['Себестоимость'].fillna(0)
+                    else:
+                        subgroup_data = df_customer.groupby(['Период.Месяц', subgroup_col]).agg({
+                            'Выручка_без_НДС': 'sum',
+                            'Валовая_прибыль': 'sum',
+                            'Количество': 'sum'
+                        }).reset_index()
+                        subgroup_data['Себестоимость'] = 0
+                    
+                    subgroup_data['Название'] = subgroup_data['Период.Месяц'].map(month_names)
+                    subgroup_data['Рентабельность'] = (subgroup_data['Валовая_прибыль'] / subgroup_data['Выручка_без_НДС'] * 100).fillna(0)
+                    subgroup_data = subgroup_data.sort_values(['Период.Месяц', subgroup_col])
+                    
+                    # Получаем список уникальных подгрупп
+                    unique_subgroups = subgroup_data[subgroup_col].unique()
+                    
+                    # Заголовки таблицы
+                    col_headers_sub = st.columns([1.2, 1.2, 1, 1, 1, 1, 1])
+                    with col_headers_sub[0]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB;'>Месяц</div>", unsafe_allow_html=True)
+                    with col_headers_sub[1]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB;'>Подгруппа</div>", unsafe_allow_html=True)
+                    with col_headers_sub[2]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Выручка</div>", unsafe_allow_html=True)
+                    with col_headers_sub[3]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Прибыль</div>", unsafe_allow_html=True)
+                    with col_headers_sub[4]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Себестоимость</div>", unsafe_allow_html=True)
+                    with col_headers_sub[5]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Рентабельность</div>", unsafe_allow_html=True)
+                    with col_headers_sub[6]:
+                        st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
+                    
+                    st.markdown("<hr style='margin: 5px 0px; border: 1px solid #2E86AB;'>", unsafe_allow_html=True)
+                    
+                    # Выводим данные
+                    for _, row in subgroup_data.iterrows():
+                        cols = st.columns([1.2, 1.2, 1, 1, 1, 1, 1])
+                        with cols[0]:
+                            st.markdown(f"<div style='font-size: 13px; padding-top: 4px;'>{row['Название']}</div>", unsafe_allow_html=True)
+                        with cols[1]:
+                            st.markdown(f"<div style='font-size: 13px; padding-top: 4px;'>{row[subgroup_col]}</div>", unsafe_allow_html=True)
+                        with cols[2]:
+                            st.markdown(f"<div style='font-size: 13px; text-align: right; padding-top: 4px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
+                        with cols[3]:
+                            st.markdown(f"<div style='font-size: 13px; text-align: right; padding-top: 4px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
+                        with cols[4]:
+                            st.markdown(f"<div style='font-size: 13px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
+                        with cols[5]:
+                            st.markdown(f"<div style='font-size: 13px; text-align: right; padding-top: 4px;'>{format_float(row['Рентабельность'], 1)}%</div>", unsafe_allow_html=True)
+                        with cols[6]:
+                            st.markdown(f"<div style='font-size: 13px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
     
@@ -550,7 +626,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '<tr>'
+    html += '</tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -560,7 +636,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</tr>'
+    html += '</table>'
     
     st.markdown(html, unsafe_allow_html=True)
     
