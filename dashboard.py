@@ -448,6 +448,14 @@ if page == "📈 Продажи":
         customer_monthly['Рентабельность'] = (customer_monthly['Валовая_прибыль'] / customer_monthly['Выручка_без_НДС'] * 100).fillna(0)
         customer_monthly = customer_monthly.sort_values('Период.Месяц')
         
+        # Рассчитываем среднеквадратическое отклонение для рентабельности
+        margin_values = customer_monthly['Рентабельность'].values
+        if len(margin_values) > 1:
+            std_dev = np.std(margin_values)
+            std_dev_formatted = format_float(std_dev, 2)
+        else:
+            std_dev_formatted = "0,00"
+        
         # Заголовок с контрагентом
         st.markdown(f"""
         <div style='
@@ -473,7 +481,7 @@ if page == "📈 Продажи":
         cust_quantity = customer_monthly['Количество'].sum()
         cust_cost = customer_monthly['Себестоимость'].sum()
         
-        cols_metrics = st.columns(6)
+        cols_metrics = st.columns(7)
         with cols_metrics[0]:
             st.metric("💰 Выручка", f"{format_number(cust_revenue)} ₽")
         with cols_metrics[1]:
@@ -484,6 +492,8 @@ if page == "📈 Продажи":
             st.metric("🎯 Рентабельность", f"{format_float(cust_margin, 1)}%")
         with cols_metrics[4]:
             st.metric("📦 Продано (шт)", f"{format_number(cust_quantity)}")
+        with cols_metrics[5]:
+            st.metric("📊 Стд. отклонение", std_dev_formatted)
         
         # Заголовки таблицы
         col_headers = st.columns([1.5, 1, 1, 1, 1, 1])
@@ -515,7 +525,11 @@ if page == "📈 Продажи":
             with cols[3]:
                 st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
             with cols[4]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_float(row['Рентабельность'], 1)}%</div>", unsafe_allow_html=True)
+                margin_val = row['Рентабельность']
+                if margin_val < 0:
+                    st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px; color: #D9534F; font-weight: bold;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
             with cols[5]:
                 st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
         
@@ -560,6 +574,14 @@ if page == "📈 Продажи":
                     subgroup_filtered = subgroup_data[subgroup_data[subgroup_col] == subgroup].copy()
                     subgroup_filtered = subgroup_filtered.sort_values('Период.Месяц')
                     
+                    # Рассчитываем стандартное отклонение для подгруппы
+                    sub_margin_values = subgroup_filtered['Рентабельность'].values
+                    if len(sub_margin_values) > 1:
+                        sub_std_dev = np.std(sub_margin_values)
+                        sub_std_dev_formatted = format_float(sub_std_dev, 2)
+                    else:
+                        sub_std_dev_formatted = "0,00"
+                    
                     # Заголовок подгруппы
                     st.markdown(f"""
                     <div style='
@@ -595,7 +617,7 @@ if page == "📈 Продажи":
                     
                     st.markdown("<hr style='margin: 5px 0px; border: 0.5px solid #2E86AB;'>", unsafe_allow_html=True)
                     
-                    # Данные по подгруппе (с выделением снижения рентабельности красным)
+                    # Данные по подгруппе
                     for _, row in subgroup_filtered.iterrows():
                         cols = st.columns([1.2, 1, 1, 1, 1, 1])
                         with cols[0]:
@@ -607,7 +629,6 @@ if page == "📈 Продажи":
                         with cols[3]:
                             st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
                         with cols[4]:
-                            # Выделяем снижение рентабельности красным цветом
                             margin_val = row['Рентабельность']
                             if margin_val < 0:
                                 st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px; color: #D9534F; font-weight: bold;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
@@ -616,7 +637,7 @@ if page == "📈 Продажи":
                         with cols[5]:
                             st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
                     
-                    # ИТОГО по подгруппе под соответствующими столбцами
+                    # ИТОГО по подгруппе
                     subgroup_total_rev = subgroup_filtered['Выручка_без_НДС'].sum()
                     subgroup_total_profit = subgroup_filtered['Валовая_прибыль'].sum()
                     subgroup_total_cost = subgroup_filtered['Себестоимость'].sum()
@@ -637,6 +658,21 @@ if page == "📈 Продажи":
                         st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px; color: {margin_color};'>{format_float(subgroup_margin, 1)}%</div>", unsafe_allow_html=True)
                     with cols_total[5]:
                         st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_qty)}</div>", unsafe_allow_html=True)
+                    
+                    # Добавляем стандартное отклонение для подгруппы
+                    st.markdown(f"""
+                    <div style='
+                        background-color: #F9F9F9;
+                        border-radius: 5px;
+                        padding: 5px;
+                        margin-top: 5px;
+                        margin-bottom: 10px;
+                        text-align: right;
+                    '>
+                        <span style='font-size: 11px; color: #666;'>Стандартное отклонение рентабельности: </span>
+                        <span style='font-size: 12px; font-weight: bold; color: #2E86AB;'>{sub_std_dev_formatted}%</span>
+                    </div>
+                    """, unsafe_allow_html=True)
         
         # Небольшой отступ между контрагентами
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -694,7 +730,7 @@ if page == "📈 Продажи":
         for m in available_months_num:
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
-        html += '<tr>'
+        html += '</tr>'
     html += '</table>'
     
     st.markdown(html, unsafe_allow_html=True)
