@@ -448,7 +448,7 @@ if page == "📈 Продажи":
         customer_monthly['Рентабельность'] = (customer_monthly['Валовая_прибыль'] / customer_monthly['Выручка_без_НДС'] * 100).fillna(0)
         customer_monthly = customer_monthly.sort_values('Период.Месяц')
         
-        # Заголовок с контрагентом (более заметный)
+        # Заголовок с контрагентом
         st.markdown(f"""
         <div style='
             background-color: #2E86AB;
@@ -612,38 +612,30 @@ if page == "📈 Продажи":
                             with cols[5]:
                                 st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
                         
-                        # Добавляем итог по подгруппе
+                        # ИТОГО по подгруппе под соответствующими столбцами
                         subgroup_total_rev = subgroup_filtered['Выручка_без_НДС'].sum()
                         subgroup_total_profit = subgroup_filtered['Валовая_прибыль'].sum()
                         subgroup_total_cost = subgroup_filtered['Себестоимость'].sum()
                         subgroup_total_qty = subgroup_filtered['Количество'].sum()
                         subgroup_margin = (subgroup_total_profit / subgroup_total_rev * 100) if subgroup_total_rev > 0 else 0
                         
-                        st.markdown(f"""
-                        <div style='
-                            background-color: #F0F2F6;
-                            border-radius: 5px;
-                            padding: 5px;
-                            margin-top: 5px;
-                            margin-bottom: 10px;
-                        '>
-                            <div style='
-                                font-size: 12px;
-                                font-weight: bold;
-                                color: #2E86AB;
-                                text-align: right;
-                            '>
-                                ИТОГО по подгруппе: 
-                                {format_number(subgroup_total_rev)} ₽ | 
-                                {format_number(subgroup_total_profit)} ₽ | 
-                                {format_number(subgroup_total_cost)} ₽ | 
-                                {format_float(subgroup_margin, 1)}% | 
-                                {format_number(subgroup_total_qty)} шт
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        # Создаем строку с итогами под соответствующими колонками
+                        cols_total = st.columns([1.2, 1, 1, 1, 1, 1])
+                        with cols_total[0]:
+                            st.markdown("<div style='font-weight: bold; font-size: 12px; padding-top: 8px;'>ИТОГО:</div>", unsafe_allow_html=True)
+                        with cols_total[1]:
+                            st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_rev)} ₽</div>", unsafe_allow_html=True)
+                        with cols_total[2]:
+                            st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_profit)} ₽</div>", unsafe_allow_html=True)
+                        with cols_total[3]:
+                            st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_cost)} ₽</div>", unsafe_allow_html=True)
+                        with cols_total[4]:
+                            st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_float(subgroup_margin, 1)}%</div>", unsafe_allow_html=True)
+                        with cols_total[5]:
+                            st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_qty)}</div>", unsafe_allow_html=True)
         
-        st.markdown("---")
+        # Убираем разделитель между контрагентами (оставляем только небольшой отступ)
+        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
     
     # Выводим данные по каждому контрагенту
     for customer in key_customers:
@@ -689,7 +681,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '</td>'
+    html += '<table>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -705,78 +697,6 @@ if page == "📈 Продажи":
     
     total_top5 = cust_rev[cust_rev['Контрагент'].isin(top5)]['Выручка_без_НДС'].sum()
     st.caption(f"📊 Топ-5: {format_number(total_top5)} ₽ ({format_float(total_top5/year_revenue*100,1)}% от общей выручки без НДС)")
-    st.divider()
-    
-    # ==========================================
-    # ДЕТАЛИЗАЦИЯ
-    # ==========================================
-    st.subheader("🔽 ВЫБЕРИТЕ ПАРАМЕТРЫ ДЛЯ ДЕТАЛИЗАЦИИ")
-    
-    col_filter_month, col_filter_customer = st.columns(2)
-    
-    with col_filter_month:
-        selected_month_display = st.selectbox("📅 Выберите месяц", available_months_display)
-        selected_month_num = available_months_num[available_months_display.index(selected_month_display)]
-    
-    with col_filter_customer:
-        all_customers = sorted(df_year['Контрагент'].dropna().unique())
-        selected_customers = st.multiselect(
-            "🏢 Выберите контрагентов",
-            all_customers,
-            default=all_customers[:5] if len(all_customers) > 5 else all_customers
-        )
-    
-    df_filtered = df_year[(df_year['Период.Месяц'] == selected_month_num) & (df_year['Контрагент'].isin(selected_customers))]
-    
-    st.divider()
-    st.subheader(f"📊 ДЕТАЛИ ЗА {selected_month_display} {selected_year}")
-    
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.metric("💰 Выручка без НДС", f"{format_number(df_filtered['Выручка_без_НДС'].sum())} ₽")
-    with m2:
-        st.metric("📈 Валовая прибыль", f"{format_number(df_filtered['Валовая_прибыль'].sum())} ₽")
-    with m3:
-        marg = df_filtered['Валовая_прибыль'].sum() / df_filtered['Выручка_без_НДС'].sum() * 100 if df_filtered['Выручка_без_НДС'].sum() > 0 else 0
-        st.metric("🎯 Рентабельность", f"{format_float(marg, 1)}%")
-    with m4:
-        st.metric("📦 Продано (шт)", f"{format_number(df_filtered['Количество'].sum())}")
-    
-    c1, c2 = st.columns(2)
-    with c1:
-        top10 = df_filtered.groupby('Контрагент')['Выручка_без_НДС'].sum().nlargest(10).reset_index()
-        if not top10.empty:
-            fig = px.bar(top10, x='Выручка_без_НДС', y='Контрагент', orientation='h', 
-                         title='Топ-10 контрагентов по выручке без НДС',
-                         labels={'Выручка_без_НДС': 'Выручка без НДС (₽)'})
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with c2:
-        comp = df_filtered.groupby('Контрагент')[['Выручка_без_НДС', 'Валовая_прибыль']].sum().nlargest(10, 'Выручка_без_НДС').reset_index()
-        if not comp.empty:
-            fig2 = go.Figure()
-            fig2.add_trace(go.Bar(name='Выручка без НДС', x=comp['Контрагент'], y=comp['Выручка_без_НДС'], marker_color='#2E86AB'))
-            fig2.add_trace(go.Bar(name='Валовая прибыль', x=comp['Контрагент'], y=comp['Валовая_прибыль'], marker_color='#52B788'))
-            fig2.update_layout(title='Выручка без НДС vs Валовая прибыль', barmode='group')
-            st.plotly_chart(fig2, use_container_width=True)
-    
-    st.subheader("📋 Детальные данные")
-    show_cols = ['Дата', 'Контрагент', 'Номенклатура', 'Выручка_без_НДС', 'Валовая_прибыль', 'Рентабельность_%', 'Количество']
-    show_cols = [c for c in show_cols if c in df_filtered.columns]
-    if not df_filtered.empty:
-        df_display = df_filtered[show_cols].copy()
-        df_display = df_display.rename(columns={'Выручка_без_НДС': 'Выручка без НДС'})
-        df_display['Выручка без НДС'] = df_display['Выручка без НДС'].apply(lambda x: f"{format_number(x)} ₽")
-        df_display['Валовая_прибыль'] = df_display['Валовая_прибыль'].apply(lambda x: f"{format_number(x)} ₽")
-        df_display['Рентабельность_%'] = df_display['Рентабельность_%'].apply(lambda x: f"{format_float(x, 1)}%")
-        df_display['Количество'] = df_display['Количество'].apply(format_number)
-        
-        st.dataframe(df_display.head(100), use_container_width=True)
-        
-        csv = df_filtered[show_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-        st.download_button("📥 Скачать CSV", csv, f"data_{selected_year}_{selected_month_num}.csv", "text/csv")
-    else:
-        st.warning("Нет данных")
     
     st.caption(f"📅 {selected_month_display} {selected_year} | Записей: {format_number(len(df_filtered))}")
 
