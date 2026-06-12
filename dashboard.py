@@ -470,21 +470,39 @@ if page == "📈 Продажи":
         with cols_metrics[4]:
             st.metric("📦 Продано (шт)", f"{format_number(cust_quantity)}")
         
-        # Помесячная таблица
+        # Заголовки таблицы
+        col_headers = st.columns([1.5, 1, 1, 1, 1, 1])
+        with col_headers[0]:
+            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB;'>Месяц</div>", unsafe_allow_html=True)
+        with col_headers[1]:
+            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Выручка</div>", unsafe_allow_html=True)
+        with col_headers[2]:
+            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Прибыль</div>", unsafe_allow_html=True)
+        with col_headers[3]:
+            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Себестоимость</div>", unsafe_allow_html=True)
+        with col_headers[4]:
+            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Рентабельность</div>", unsafe_allow_html=True)
+        with col_headers[5]:
+            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
+        
+        # Разделительная линия
+        st.markdown("<hr style='margin: 5px 0px;'>", unsafe_allow_html=True)
+        
+        # Помесячные данные
         for _, row in customer_monthly.iterrows():
             cols = st.columns([1.5, 1, 1, 1, 1, 1])
             with cols[0]:
-                st.markdown(f"<div style='font-size: 14px; padding-top: 8px;'>{row['Название']}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 14px; padding-top: 4px;'>{row['Название']}</div>", unsafe_allow_html=True)
             with cols[1]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
             with cols[2]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
             with cols[3]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
             with cols[4]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_float(row['Рентабельность'], 1)}%</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_float(row['Рентабельность'], 1)}%</div>", unsafe_allow_html=True)
             with cols[5]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
         
         st.markdown("---")
     
@@ -542,7 +560,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</table>'
+    html += '</tr>'
     
     st.markdown(html, unsafe_allow_html=True)
     
