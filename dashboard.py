@@ -68,8 +68,7 @@ def load_sales_data():
     df['Год'] = df['Дата'].dt.year
     df['Месяц_цифра'] = df['Дата'].dt.month
     
-    # ВАЖНО: Используем столбец 20 (индекс 19) - это себестоимость без НДС
-    # Столбец 20 в Excel соответствует индексу 19 в Python (нумерация с 0)
+    # Столбец 20 (индекс 19) - себестоимость без НДС
     df['Себестоимость_без_НДС'] = pd.to_numeric(df.iloc[:, 19], errors='coerce').fillna(0)
     
     # Расчёт прибыли и рентабельности
@@ -273,11 +272,14 @@ if page == "📈 Продажи":
     if len(available_years_int) == 0:
         available_years_int = [2024]
     
+    # По умолчанию выбираем 2026 год, если он есть, иначе первый доступный
+    default_year = 2026 if 2026 in available_years_int else available_years_int[0]
+    
     st.divider()
     
     col_filter_year = st.columns([1])[0]
     with col_filter_year:
-        selected_year = st.selectbox("📅 Выберите год", available_years_int)
+        selected_year = st.selectbox("📅 Выберите год", available_years_int, index=available_years_int.index(default_year))
     
     df_year = sales_df[sales_df['Год'] == selected_year]
     available_months_num = sorted(df_year['Период.Месяц'].unique())
@@ -303,6 +305,9 @@ if page == "📈 Продажи":
     
     st.divider()
     
+    # ==========================================
+    # ПОМЕСЯЧНАЯ РАЗБИВКА ПО ВСЕМ КОНТРАГЕНТАМ
+    # ==========================================
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
     # Проверяем наличие столбца себестоимости
@@ -401,6 +406,97 @@ if page == "📈 Продажи":
     
     st.divider()
     
+    # ==========================================
+    # ПОМЕСЯЧНАЯ РАЗБИВКА ПО КЛЮЧЕВЫМ КОНТРАГЕНТАМ
+    # ==========================================
+    st.subheader(f"📊 ПОМЕСЯЧНАЯ РАЗБИВКА ПО КЛЮЧЕВЫМ КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
+    
+    # Список ключевых контрагентов в нужном порядке
+    key_customers = [
+        "Умный Ритейл ООО",
+        "Вкусвилл АО",
+        "Тест продажи ООО",
+        "Городской супермаркет ООО"
+    ]
+    
+    # Функция для отображения помесячной разбивки для одного контрагента
+    def display_customer_monthly(customer_name):
+        df_customer = df_year[df_year['Контрагент'] == customer_name]
+        
+        if df_customer.empty:
+            st.info(f"Нет данных для контрагента {customer_name}")
+            return
+        
+        # Агрегируем по месяцам
+        if has_cost_column:
+            customer_monthly = df_customer.groupby('Период.Месяц').agg({
+                'Выручка_без_НДС': 'sum',
+                'Валовая_прибыль': 'sum',
+                'Количество': 'sum',
+                'Себестоимость': 'sum'
+            }).reset_index()
+            customer_monthly['Себестоимость'] = customer_monthly['Себестоимость'].fillna(0)
+        else:
+            customer_monthly = df_customer.groupby('Период.Месяц').agg({
+                'Выручка_без_НДС': 'sum',
+                'Валовая_прибыль': 'sum',
+                'Количество': 'sum'
+            }).reset_index()
+            customer_monthly['Себестоимость'] = 0
+        
+        customer_monthly['Название'] = customer_monthly['Период.Месяц'].map(month_names)
+        customer_monthly['Рентабельность'] = (customer_monthly['Валовая_прибыль'] / customer_monthly['Выручка_без_НДС'] * 100).fillna(0)
+        customer_monthly = customer_monthly.sort_values('Период.Месяц')
+        
+        # Заголовок с контрагентом
+        st.markdown(f"**🏢 {customer_name}**")
+        
+        # Выводим метрики
+        cust_revenue = customer_monthly['Выручка_без_НДС'].sum()
+        cust_profit = customer_monthly['Валовая_прибыль'].sum()
+        cust_margin = (cust_profit / cust_revenue * 100) if cust_revenue > 0 else 0
+        cust_quantity = customer_monthly['Количество'].sum()
+        cust_cost = customer_monthly['Себестоимость'].sum()
+        
+        cols_metrics = st.columns(6)
+        with cols_metrics[0]:
+            st.metric("💰 Выручка", f"{format_number(cust_revenue)} ₽")
+        with cols_metrics[1]:
+            st.metric("📈 Прибыль", f"{format_number(cust_profit)} ₽")
+        with cols_metrics[2]:
+            st.metric("📦 Себестоимость", f"{format_number(cust_cost)} ₽")
+        with cols_metrics[3]:
+            st.metric("🎯 Рентабельность", f"{format_float(cust_margin, 1)}%")
+        with cols_metrics[4]:
+            st.metric("📦 Продано (шт)", f"{format_number(cust_quantity)}")
+        
+        # Помесячная таблица
+        for _, row in customer_monthly.iterrows():
+            cols = st.columns([1.5, 1, 1, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"<div style='font-size: 14px; padding-top: 8px;'>{row['Название']}</div>", unsafe_allow_html=True)
+            with cols[1]:
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
+            with cols[2]:
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
+            with cols[3]:
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
+            with cols[4]:
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_float(row['Рентабельность'], 1)}%</div>", unsafe_allow_html=True)
+            with cols[5]:
+                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 8px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
+        
+        st.markdown("---")
+    
+    # Выводим данные по каждому контрагенту
+    for customer in key_customers:
+        display_customer_monthly(customer)
+    
+    st.divider()
+    
+    # ==========================================
+    # ТОП-5 КОНТРАГЕНТОВ
+    # ==========================================
     st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ЗА {selected_year}")
     
     cust_rev = df_year.groupby('Контрагент')['Выручка_без_НДС'].sum().reset_index()
@@ -436,7 +532,7 @@ if page == "📈 Продажи":
     html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
     for m in available_months_num:
         html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
-    html += '<table>'
+    html += '<tr>'
     
     for _, row in df_top5.iterrows():
         html += '<tr>'
@@ -454,6 +550,9 @@ if page == "📈 Продажи":
     st.caption(f"📊 Топ-5: {format_number(total_top5)} ₽ ({format_float(total_top5/year_revenue*100,1)}% от общей выручки без НДС)")
     st.divider()
     
+    # ==========================================
+    # ДЕТАЛИЗАЦИЯ
+    # ==========================================
     st.subheader("🔽 ВЫБЕРИТЕ ПАРАМЕТРЫ ДЛЯ ДЕТАЛИЗАЦИИ")
     
     col_filter_month, col_filter_customer = st.columns(2)
