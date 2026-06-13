@@ -659,7 +659,7 @@ if page == "📈 Продажи":
                     with cols_total[5]:
                         st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_qty)}</div>", unsafe_allow_html=True)
                     
-                    # Добавляем стандартное отклонение для подгруппы
+                    # Стандартное отклонение для подгруппы
                     st.markdown(f"""
                     <div style='
                         background-color: #F9F9F9;
@@ -673,6 +673,161 @@ if page == "📈 Продажи":
                         <span style='font-size: 12px; font-weight: bold; color: #2E86AB;'>{sub_std_dev_formatted}%</span>
                     </div>
                     """, unsafe_allow_html=True)
+                    
+                    # Кнопка для детализации по номенклатурам
+                    if st.button(f"🔍 Анализ номенклатур в подгруппе {subgroup}", key=f"btn_nomen_{customer_name}_{subgroup}"):
+                        # Получаем данные по номенклатурам в этой подгруппе
+                        df_subgroup_nomen = df_customer[df_customer[subgroup_col] == subgroup].copy()
+                        
+                        if df_subgroup_nomen.empty:
+                            st.warning(f"Нет данных по номенклатурам в подгруппе {subgroup}")
+                        else:
+                            # Агрегируем по номенклатурам и месяцам
+                            if has_cost_column:
+                                nomen_data = df_subgroup_nomen.groupby(['Номенклатура', 'Период.Месяц']).agg({
+                                    'Выручка_без_НДС': 'sum',
+                                    'Валовая_прибыль': 'sum',
+                                    'Количество': 'sum',
+                                    'Себестоимость': 'sum'
+                                }).reset_index()
+                                nomen_data['Себестоимость'] = nomen_data['Себестоимость'].fillna(0)
+                            else:
+                                nomen_data = df_subgroup_nomen.groupby(['Номенклатура', 'Период.Месяц']).agg({
+                                    'Выручка_без_НДС': 'sum',
+                                    'Валовая_прибыль': 'sum',
+                                    'Количество': 'sum'
+                                }).reset_index()
+                                nomen_data['Себестоимость'] = 0
+                            
+                            nomen_data['Название'] = nomen_data['Период.Месяц'].map(month_names)
+                            nomen_data['Рентабельность'] = (nomen_data['Валовая_прибыль'] / nomen_data['Выручка_без_НДС'] * 100).fillna(0)
+                            nomen_data = nomen_data.sort_values(['Период.Месяц', 'Номенклатура'])
+                            
+                            # Получаем список уникальных номенклатур
+                            unique_nomenclatures = nomen_data['Номенклатура'].unique()
+                            
+                            # Заголовок для popup (используем expander)
+                            with st.expander(f"📋 Детализация по номенклатурам в подгруппе {subgroup}", expanded=True):
+                                st.markdown(f"""
+                                <div style='
+                                    background-color: #2E86AB;
+                                    border-radius: 8px;
+                                    padding: 8px;
+                                    margin-bottom: 15px;
+                                '>
+                                    <div style='
+                                        font-size: 16px;
+                                        font-weight: bold;
+                                        color: white;
+                                        text-align: center;
+                                    '>📊 Анализ по номенклатурам: {subgroup}</div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Для каждой номенклатуры создаем отдельную таблицу
+                                for nomen in unique_nomenclatures:
+                                    nomen_filtered = nomen_data[nomen_data['Номенклатура'] == nomen].copy()
+                                    nomen_filtered = nomen_filtered.sort_values('Период.Месяц')
+                                    
+                                    # Рассчитываем стандартное отклонение для номенклатуры
+                                    nomen_margin_values = nomen_filtered['Рентабельность'].values
+                                    if len(nomen_margin_values) > 1:
+                                        nomen_std_dev = np.std(nomen_margin_values)
+                                        nomen_std_dev_formatted = format_float(nomen_std_dev, 2)
+                                    else:
+                                        nomen_std_dev_formatted = "0,00"
+                                    
+                                    # Заголовок номенклатуры
+                                    st.markdown(f"""
+                                    <div style='
+                                        background-color: #D6EAF8;
+                                        border-radius: 6px;
+                                        padding: 6px;
+                                        margin-top: 12px;
+                                        margin-bottom: 8px;
+                                    '>
+                                        <div style='
+                                            font-size: 14px;
+                                            font-weight: bold;
+                                            color: #1A5276;
+                                            text-align: center;
+                                        '>📦 {nomen}</div>
+                                    </div>
+                                    """, unsafe_allow_html=True)
+                                    
+                                    # Заголовки таблицы для номенклатуры
+                                    col_headers_nomen = st.columns([1.2, 1, 1, 1, 1, 1])
+                                    with col_headers_nomen[0]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 12px; color: #2E86AB;'>Месяц</div>", unsafe_allow_html=True)
+                                    with col_headers_nomen[1]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 12px; color: #2E86AB; text-align: right;'>Выручка</div>", unsafe_allow_html=True)
+                                    with col_headers_nomen[2]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 12px; color: #2E86AB; text-align: right;'>Прибыль</div>", unsafe_allow_html=True)
+                                    with col_headers_nomen[3]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 12px; color: #2E86AB; text-align: right;'>Себестоимость</div>", unsafe_allow_html=True)
+                                    with col_headers_nomen[4]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 12px; color: #2E86AB; text-align: right;'>Рентабельность</div>", unsafe_allow_html=True)
+                                    with col_headers_nomen[5]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 12px; color: #2E86AB; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
+                                    
+                                    st.markdown("<hr style='margin: 5px 0px; border: 0.5px solid #2E86AB;'>", unsafe_allow_html=True)
+                                    
+                                    # Данные по номенклатуре
+                                    for _, row in nomen_filtered.iterrows():
+                                        cols = st.columns([1.2, 1, 1, 1, 1, 1])
+                                        with cols[0]:
+                                            st.markdown(f"<div style='font-size: 11px; padding-top: 4px;'>{row['Название']}</div>", unsafe_allow_html=True)
+                                        with cols[1]:
+                                            st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 4px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
+                                        with cols[2]:
+                                            st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 4px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
+                                        with cols[3]:
+                                            st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
+                                        with cols[4]:
+                                            margin_val = row['Рентабельность']
+                                            if margin_val < 0:
+                                                st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 4px; color: #D9534F; font-weight: bold;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
+                                            else:
+                                                st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 4px;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
+                                        with cols[5]:
+                                            st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
+                                    
+                                    # ИТОГО по номенклатуре
+                                    nomen_total_rev = nomen_filtered['Выручка_без_НДС'].sum()
+                                    nomen_total_profit = nomen_filtered['Валовая_прибыль'].sum()
+                                    nomen_total_cost = nomen_filtered['Себестоимость'].sum()
+                                    nomen_total_qty = nomen_filtered['Количество'].sum()
+                                    nomen_margin = (nomen_total_profit / nomen_total_rev * 100) if nomen_total_rev > 0 else 0
+                                    
+                                    cols_total_nomen = st.columns([1.2, 1, 1, 1, 1, 1])
+                                    with cols_total_nomen[0]:
+                                        st.markdown("<div style='font-weight: bold; font-size: 11px; padding-top: 6px;'>ИТОГО:</div>", unsafe_allow_html=True)
+                                    with cols_total_nomen[1]:
+                                        st.markdown(f"<div style='font-weight: bold; font-size: 11px; text-align: right; padding-top: 6px;'>{format_number(nomen_total_rev)} ₽</div>", unsafe_allow_html=True)
+                                    with cols_total_nomen[2]:
+                                        st.markdown(f"<div style='font-weight: bold; font-size: 11px; text-align: right; padding-top: 6px;'>{format_number(nomen_total_profit)} ₽</div>", unsafe_allow_html=True)
+                                    with cols_total_nomen[3]:
+                                        st.markdown(f"<div style='font-weight: bold; font-size: 11px; text-align: right; padding-top: 6px;'>{format_number(nomen_total_cost)} ₽</div>", unsafe_allow_html=True)
+                                    with cols_total_nomen[4]:
+                                        margin_color = "#D9534F" if nomen_margin < 0 else "#333"
+                                        st.markdown(f"<div style='font-weight: bold; font-size: 11px; text-align: right; padding-top: 6px; color: {margin_color};'>{format_float(nomen_margin, 1)}%</div>", unsafe_allow_html=True)
+                                    with cols_total_nomen[5]:
+                                        st.markdown(f"<div style='font-weight: bold; font-size: 11px; text-align: right; padding-top: 6px;'>{format_number(nomen_total_qty)}</div>", unsafe_allow_html=True)
+                                    
+                                    # Стандартное отклонение для номенклатуры
+                                    st.markdown(f"""
+                                    <div style='
+                                        background-color: #F9F9F9;
+                                        border-radius: 4px;
+                                        padding: 4px;
+                                        margin-top: 4px;
+                                        margin-bottom: 8px;
+                                        text-align: right;
+                                    '>
+                                        <span style='font-size: 10px; color: #666;'>Стандартное отклонение: </span>
+                                        <span style='font-size: 11px; font-weight: bold; color: #2E86AB;'>{nomen_std_dev_formatted}%</span>
+                                    </div>
+                                    """, unsafe_allow_html=True)
         
         # Небольшой отступ между контрагентами
         st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
@@ -731,7 +886,7 @@ if page == "📈 Продажи":
             val = row[month_names[m]]
             html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
         html += '</tr>'
-    html += '</table>'
+    html += '</tr>'
     
     st.markdown(html, unsafe_allow_html=True)
     
