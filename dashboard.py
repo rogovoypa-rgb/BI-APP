@@ -956,25 +956,6 @@ elif page == "🚚 Логистика":
             - `Стоимость товара в заказе Без НДС`
             """)
     else:
-                # ===== ДИАГНОСТИКА: показываем реальные колонки с затратами =====
-        with st.expander("🔧 Диагностика (нажмите, чтобы увидеть структуру данных)"):
-            st.write("**Колонки в файле logistics_data.xlsx:**")
-            st.write(list(df_log.columns))
-            
-            # Ищем колонки, которые могут содержать затраты
-            cost_columns = [col for col in df_log.columns if any(word in col.lower() for word in ['стоимость', 'затрат', 'логистик', 'доставк', 'pallet', 'plm'])]
-            st.write("**Потенциальные колонки с затратами:**")
-            st.write(cost_columns)
-            
-            # Показываем первые 5 строк с этими колонками
-            if cost_columns:
-                st.write("**Примеры данных (первые 5 строк):**")
-                st.dataframe(df_log[cost_columns].head(5))
-            
-            # Проверяем, есть ли ненулевые значения
-            for col in cost_columns:
-                non_zero = (df_log[col] > 0).sum()
-                st.write(f"Колонка `{col}`: {non_zero} ненулевых значений из {len(df_log)}")
         # ===== 1. ПРЕДОБРАБОТКА ДАННЫХ =====
         df_log = logistics_df.copy()
         
@@ -982,61 +963,122 @@ elif page == "🚚 Логистика":
         if 'Принимать к анализу?' in df_log.columns:
             df_log = df_log[df_log['Принимать к анализу?'] == 1]
         
-        # Приводим даты к единому формату
-        if 'Дата отгрузки' in df_log.columns:
-            df_log['Дата'] = pd.to_datetime(df_log['Дата отгрузки'], errors='coerce')
-        elif 'Дата заказа' in df_log.columns:
-            df_log['Дата'] = pd.to_datetime(df_log['Дата заказа'], errors='coerce')
+        # ===== ДИАГНОСТИКА: показываем структуру данных =====
+        with st.expander("🔧 Диагностика структуры данных"):
+            st.write("**📋 Все колонки в файле:**")
+            st.write(list(df_log.columns))
+            
+            # Ищем колонки с затратами
+            st.write("**💰 Потенциальные колонки с затратами:**")
+            cost_keywords = ['стоимость', 'затрат', 'логистик', 'доставк', 'цена', 'планов', 'фактич']
+            cost_cols = []
+            for col in df_log.columns:
+                col_lower = col.lower()
+                if any(keyword in col_lower for keyword in cost_keywords):
+                    cost_cols.append(col)
+            st.write(cost_cols if cost_cols else "Не найдено")
+            
+            # Показываем первые 3 строки всех колонок
+            st.write("**📊 Первые 3 строки данных:**")
+            st.dataframe(df_log.head(3))
+            
+            # Статистика по числовым колонкам
+            st.write("**📈 Статистика по числовым колонкам:**")
+            numeric_cols = df_log.select_dtypes(include=[np.number]).columns
+            for col in numeric_cols:
+                non_zero = (df_log[col] != 0).sum()
+                st.write(f"- `{col}`: {non_zero} ненулевых значений из {len(df_log)} (сумма: {df_log[col].sum():,.2f})")
+        
+        # Определяем колонку с датой
+        date_column = None
+        for col in ['Дата отгрузки', 'Дата заказа', 'Дата']:
+            if col in df_log.columns:
+                date_column = col
+                break
+        
+        if date_column:
+            df_log['Дата'] = pd.to_datetime(df_log[date_column], errors='coerce')
+            st.success(f"✅ Используется колонка с датами: {date_column}")
         else:
             df_log['Дата'] = pd.Timestamp.now()
+            st.warning("⚠️ Колонка с датами не найдена, используется текущая дата")
         
         # Удаляем строки с некорректными датами
         df_log = df_log.dropna(subset=['Дата'])
         
-        # Создаём временные признаки (Убеждаемся, что они создаются корректно)
+        # Создаём временные признаки
         df_log['Год'] = df_log['Дата'].dt.year
         df_log['Месяц'] = df_log['Дата'].dt.month
         df_log['Месяц_год'] = df_log['Дата'].dt.strftime('%Y-%m')
         df_log['Квартал'] = df_log['Дата'].dt.quarter
         
-        # Добавляем полезные расчетные колонки
-        if 'Кол-во паллет в заказе' in df_log.columns:
-            df_log['Кол-во паллет в заказе'] = pd.to_numeric(df_log['Кол-во паллет в заказе'], errors='coerce').fillna(0)
+        # Определяем колонку с количеством паллет
+        pallet_column = None
+        for col in ['Кол-во паллет в заказе', 'Кол-во паллет', 'Паллеты', 'Количество паллет']:
+            if col in df_log.columns:
+                pallet_column = col
+                break
+        
+        if pallet_column:
+            df_log['Кол-во паллет в заказе'] = pd.to_numeric(df_log[pallet_column], errors='coerce').fillna(0)
+            st.success(f"✅ Используется колонка с паллетами: {pallet_column}")
         else:
             df_log['Кол-во паллет в заказе'] = 0
+            st.warning("⚠️ Колонка с паллетами не найдена")
         
-        # Логистические затраты
-        if 'Итого совокупная Стоимость доставки 1 паллета без НДС' in df_log.columns:
-            df_log['Логистика_затраты'] = pd.to_numeric(df_log['Итого совокупная Стоимость доставки 1 паллета без НДС'], errors='coerce').fillna(0)
+        # Определяем колонку с затратами на логистику
+        logistics_column = None
+        for col in ['Итого совокупная Стоимость доставки 1 паллета без НДС', 
+                    'Итого совокупная Стоимость доставки 1 паллета',
+                    'Стоимость логистики SKU',
+                    'Логистика_затраты',
+                    'Стоимость доставки']:
+            if col in df_log.columns:
+                logistics_column = col
+                break
+        
+        # Если не нашли по точному названию, ищем по ключевым словам
+        if not logistics_column:
+            for col in df_log.columns:
+                col_lower = col.lower()
+                if ('логистик' in col_lower or 'доставк' in col_lower) and ('паллет' in col_lower or 'plm' in col_lower):
+                    logistics_column = col
+                    break
+        
+        if logistics_column:
+            df_log['Логистика_затраты'] = pd.to_numeric(df_log[logistics_column], errors='coerce').fillna(0)
+            st.success(f"✅ Используется колонка с затратами: {logistics_column}")
         else:
             df_log['Логистика_затраты'] = 0
+            st.error("❌ Колонка с затратами на логистику не найдена!")
+            st.info("💡 Убедитесь, что в файле есть колонка с названием, содержащим слова 'логистик', 'доставк' или 'паллет'")
         
-        # Стоимость товаров
-        if 'Стоимость товара в заказе Без НДС' in df_log.columns:
-            df_log['Стоимость_товара_без_НДС'] = pd.to_numeric(df_log['Стоимость товара в заказе Без НДС'], errors='coerce').fillna(0)
+        # Определяем колонку со стоимостью товаров
+        goods_column = None
+        for col in ['Стоимость товара в заказе Без НДС', 'Стоимость товара', 'Сумма без НДС']:
+            if col in df_log.columns:
+                goods_column = col
+                break
+        
+        if goods_column:
+            df_log['Стоимость_товара_без_НДС'] = pd.to_numeric(df_log[goods_column], errors='coerce').fillna(0)
+            st.success(f"✅ Используется колонка со стоимостью товаров: {goods_column}")
         else:
             df_log['Стоимость_товара_без_НДС'] = 0
+            st.warning("⚠️ Колонка со стоимостью товаров не найдена")
         
         # Стоимость доставки на паллету
         df_log['Стоимость_доставки_на_паллету'] = df_log['Логистика_затраты'] / df_log['Кол-во паллет в заказе'].replace(0, 1)
         df_log['Стоимость_доставки_на_паллету'] = df_log['Стоимость_доставки_на_паллету'].replace([float('inf'), -float('inf')], 0).fillna(0)
         
-        # Логистические затраты на единицу товара
-        if 'Стоимость логистики 1 шт. SKU при расчете по фактическому объему. Без НДС' in df_log.columns:
-            df_log['Логистика_на_шт'] = pd.to_numeric(df_log['Стоимость логистики 1 шт. SKU при расчете по фактическому объему. Без НДС'], errors='coerce').fillna(0)
-        else:
-            df_log['Логистика_на_шт'] = 0
-        
-        # Доля логистики в стоимости товара
-        if 'Шт в заказе' in df_log.columns:
-            df_log['Шт в заказе'] = pd.to_numeric(df_log['Шт в заказе'], errors='coerce').fillna(0)
-        else:
-            df_log['Шт в заказе'] = 0
-        
-        df_log['Доля_логистики_в_цене_%'] = (df_log['Логистика_на_шт'] * df_log['Шт в заказе'] / df_log['Стоимость_товара_без_НДС'].replace(0, 1) * 100).fillna(0)
-        df_log['Доля_логистики_в_цене_%'] = df_log['Доля_логистики_в_цене_%'].clip(0, 100)
+        # Проверяем, есть ли ненулевые затраты
+        if df_log['Логистика_затраты'].sum() == 0:
+            st.error("❌ В данных нет затрат на логистику (все значения равны 0)!")
+            st.info("📌 Проверьте колонку с затратами в файле Excel. Возможно, она называется по-другому или все значения пустые.")
+            st.stop()
         
         # ===== 2. ОБЩИЕ МЕТРИКИ =====
+        st.divider()
         st.subheader("📊 Ключевые показатели логистики")
         
         # Расчёт метрик
@@ -1066,43 +1108,38 @@ elif page == "🚚 Логистика":
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         with col_f1:
-            # Фильтр по году
             if 'Год' in df_log.columns and len(df_log['Год'].dropna()) > 0:
                 available_years = sorted(df_log['Год'].dropna().unique())
                 selected_year = st.selectbox("📅 Год", available_years, index=len(available_years)-1 if available_years else 0)
             else:
                 selected_year = None
-                st.info("Нет данных по годам")
         
         with col_f2:
-            # Фильтр по городу
             if 'Город' in df_log.columns:
                 cities_list = df_log['Город'].dropna().unique().tolist()
                 cities_list = [str(c) for c in cities_list if pd.notna(c) and str(c) != 'nan' and str(c) != 'None']
                 cities_list = sorted(set(cities_list))
-                cities = ['Все'] + cities_list
+                cities = ['Все'] + cities_list if cities_list else ['Все']
                 selected_city = st.selectbox("🏙️ Город", cities)
             else:
                 selected_city = 'Все'
         
         with col_f3:
-            # Фильтр по категории
             if 'Категория' in df_log.columns:
                 categories_list = df_log['Категория'].dropna().unique().tolist()
                 categories_list = [str(c) for c in categories_list if pd.notna(c) and str(c) != 'nan' and str(c) != 'None']
                 categories_list = sorted(set(categories_list))
-                categories = ['Все'] + categories_list
+                categories = ['Все'] + categories_list if categories_list else ['Все']
                 selected_category = st.selectbox("📁 Категория", categories)
             else:
                 selected_category = 'Все'
         
         with col_f4:
-            # Фильтр по подкатегории
             if 'Подкатегория' in df_log.columns:
                 subcategories_list = df_log['Подкатегория'].dropna().unique().tolist()
                 subcategories_list = [str(c) for c in subcategories_list if pd.notna(c) and str(c) != 'nan' and str(c) != 'None']
                 subcategories_list = sorted(set(subcategories_list))
-                subcategories = ['Все'] + subcategories_list
+                subcategories = ['Все'] + subcategories_list if subcategories_list else ['Все']
                 selected_subcategory = st.selectbox("📂 Подкатегория", subcategories)
             else:
                 selected_subcategory = 'Все'
@@ -1118,213 +1155,101 @@ elif page == "🚚 Логистика":
         if selected_subcategory != 'Все':
             filtered_df = filtered_df[filtered_df['Подкатегория'] == selected_subcategory]
         
-        # Проверяем, остались ли данные после фильтрации
         if filtered_df.empty:
-            st.warning("⚠️ Нет данных для выбранных фильтров. Попробуйте изменить параметры фильтрации.")
+            st.warning("⚠️ Нет данных для выбранных фильтров")
+            st.stop()
+        
+        # ===== 4. ДИНАМИКА ПО МЕСЯЦАМ =====
+        st.subheader("📈 Динамика логистических затрат")
+        
+        temp_df = filtered_df.dropna(subset=['Месяц_год'])
+        
+        if temp_df.empty:
+            st.warning("⚠️ Нет данных с корректными датами")
         else:
-            st.divider()
+            monthly_stats = temp_df.groupby('Месяц_год').agg({
+                'Логистика_затраты': 'sum',
+                'Кол-во паллет в заказе': 'sum'
+            }).reset_index()
             
-            # ===== 4. ДИНАМИКА ПО МЕСЯЦАМ =====
-            st.subheader("📈 Динамика логистических затрат")
+            monthly_stats = monthly_stats.sort_values('Месяц_год')
             
-            # Проверяем наличие данных для группировки
-            if 'Месяц_год' not in filtered_df.columns:
-                st.error("❌ Ошибка: колонка 'Месяц_год' не создана. Проверьте наличие дат в файле.")
-            elif filtered_df['Месяц_год'].isna().all():
-                st.error("❌ Ошибка: все значения 'Месяц_год' пустые. Проверьте формат дат.")
+            if not monthly_stats.empty and monthly_stats['Логистика_затраты'].sum() > 0:
+                fig1 = go.Figure()
+                fig1.add_trace(go.Bar(
+                    x=monthly_stats['Месяц_год'],
+                    y=monthly_stats['Логистика_затраты'],
+                    marker_color='#2E86AB',
+                    text=monthly_stats['Логистика_затраты'].apply(lambda x: f'{format_number(x)} ₽'),
+                    textposition='outside'
+                ))
+                fig1.update_layout(
+                    title='Затраты на логистику по месяцам',
+                    xaxis_title='Месяц',
+                    yaxis_title='Затраты (₽)',
+                    height=400,
+                    showlegend=False
+                )
+                st.plotly_chart(fig1, use_container_width=True)
+                
+                fig2 = go.Figure()
+                fig2.add_trace(go.Scatter(
+                    x=monthly_stats['Месяц_год'],
+                    y=monthly_stats['Кол-во паллет в заказе'],
+                    mode='lines+markers',
+                    marker=dict(size=10, color='#D9534F'),
+                    line=dict(width=3, color='#D9534F')
+                ))
+                fig2.update_layout(
+                    title='Динамика количества паллет',
+                    xaxis_title='Месяц',
+                    yaxis_title='Кол-во паллет',
+                    height=400
+                )
+                st.plotly_chart(fig2, use_container_width=True)
             else:
-                # Убираем строки с пустыми месяцами
-                temp_df = filtered_df.dropna(subset=['Месяц_год'])
-                
-                if temp_df.empty:
-                    st.warning("⚠️ Нет данных с корректными датами для отображения динамики")
-                else:
-                    # Подготавливаем данные для агрегации
-                    monthly_stats = temp_df.groupby('Месяц_год').agg({
-                        'Логистика_затраты': 'sum',
-                        'Кол-во паллет в заказе': 'sum',
-                        'Стоимость_товара_без_НДС': 'sum'
-                    }).reset_index()
-                    
-                    monthly_stats = monthly_stats.sort_values('Месяц_год')
-                    
-                    if monthly_stats.empty:
-                        st.info("Нет данных для построения графика")
-                    else:
-                        # График затрат на логистику
-                        fig1 = go.Figure()
-                        fig1.add_trace(go.Bar(
-                            name='Логистика',
-                            x=monthly_stats['Месяц_год'],
-                            y=monthly_stats['Логистика_затраты'],
-                            marker_color='#2E86AB',
-                            text=monthly_stats['Логистика_затраты'].apply(lambda x: f'{format_number(x)} ₽'),
-                            textposition='outside'
-                        ))
-                        fig1.update_layout(
-                            title='Затраты на логистику по месяцам',
-                            xaxis_title='Месяц',
-                            yaxis_title='Затраты (₽)',
-                            height=400,
-                            showlegend=False
-                        )
-                        st.plotly_chart(fig1, use_container_width=True)
-                        
-                        # График количества паллет
-                        fig2 = go.Figure()
-                        fig2.add_trace(go.Scatter(
-                            name='Паллеты',
-                            x=monthly_stats['Месяц_год'],
-                            y=monthly_stats['Кол-во паллет в заказе'],
-                            mode='lines+markers',
-                            marker=dict(size=10, color='#D9534F'),
-                            line=dict(width=3, color='#D9534F')
-                        ))
-                        fig2.update_layout(
-                            title='Динамика количества паллет',
-                            xaxis_title='Месяц',
-                            yaxis_title='Кол-во паллет',
-                            height=400
-                        )
-                        st.plotly_chart(fig2, use_container_width=True)
-                        
-                        # Дополнительный график: средняя стоимость паллеты по месяцам
-                        monthly_stats['Средняя_стоимость_паллеты'] = monthly_stats['Логистика_затраты'] / monthly_stats['Кол-во паллет в заказе'].replace(0, 1)
-                        
-                        fig3 = go.Figure()
-                        fig3.add_trace(go.Scatter(
-                            name='Ср. стоимость паллеты',
-                            x=monthly_stats['Месяц_год'],
-                            y=monthly_stats['Средняя_стоимость_паллеты'],
-                            mode='lines+markers',
-                            marker=dict(size=8, color='#52B788'),
-                            line=dict(width=2, color='#52B788')
-                        ))
-                        fig3.update_layout(
-                            title='Средняя стоимость паллеты по месяцам',
-                            xaxis_title='Месяц',
-                            yaxis_title='Стоимость (₽)',
-                            height=400
-                        )
-                        st.plotly_chart(fig3, use_container_width=True)
-            
+                st.info("📊 Нет данных для построения графиков")
+        
+        # ===== 5. АНАЛИЗ ПО ГОРОДАМ =====
+        if 'Город' in filtered_df.columns and filtered_df['Логистика_затраты'].sum() > 0:
             st.divider()
+            st.subheader("🏙️ Анализ по городам")
             
-            # ===== 5. АНАЛИЗ ПО ГОРОДАМ =====
-            if 'Город' in filtered_df.columns and len(filtered_df['Город'].dropna()) > 0:
-                st.subheader("🏙️ Анализ по городам")
+            city_stats = filtered_df.groupby('Город').agg({
+                'Логистика_затраты': 'sum',
+                'Кол-во паллет в заказе': 'sum'
+            }).reset_index()
+            
+            city_stats = city_stats[city_stats['Логистика_затраты'] > 0]
+            
+            if not city_stats.empty:
+                city_stats['Средняя_стоимость_паллеты'] = city_stats['Логистика_затраты'] / city_stats['Кол-во паллет в заказе'].replace(0, 1)
+                city_stats = city_stats.sort_values('Логистика_затраты', ascending=False)
                 
-                city_stats = filtered_df.groupby('Город').agg({
-                    'Логистика_затраты': 'sum',
-                    'Кол-во паллет в заказе': 'sum',
-                    'Стоимость_товара_без_НДС': 'sum'
-                }).reset_index()
+                top_cities = city_stats.head(10)
                 
-                # Фильтруем города с нулевыми затратами
-                city_stats = city_stats[city_stats['Логистика_затраты'] > 0]
+                fig3 = px.bar(
+                    top_cities,
+                    x='Город',
+                    y='Логистика_затраты',
+                    title='Топ-10 городов по затратам на логистику',
+                    labels={'Логистика_затраты': 'Затраты (₽)'},
+                    color='Средняя_стоимость_паллеты',
+                    color_continuous_scale='Blues'
+                )
+                fig3.update_layout(height=450)
+                st.plotly_chart(fig3, use_container_width=True)
                 
-                if not city_stats.empty:
-                    city_stats['Средняя_стоимость_паллеты'] = city_stats['Логистика_затраты'] / city_stats['Кол-во паллет в заказе'].replace(0, 1)
-                    city_stats['Доля_логистики_%'] = (city_stats['Логистика_затраты'] / city_stats['Стоимость_товара_без_НДС'].replace(0, 1) * 100)
-                    city_stats = city_stats.sort_values('Логистика_затраты', ascending=False)
-                    
-                    # Топ-10 городов по затратам
-                    top_cities = city_stats.head(10)
-                    
-                    fig4 = px.bar(
-                        top_cities,
-                        x='Город',
-                        y='Логистика_затраты',
-                        title='Топ-10 городов по затратам на логистику',
-                        labels={'Логистика_затраты': 'Затраты (₽)'},
-                        color='Средняя_стоимость_паллеты',
-                        color_continuous_scale='Blues'
-                    )
-                    fig4.update_layout(height=450)
-                    st.plotly_chart(fig4, use_container_width=True)
-                    
-                    # Таблица с городами
-                    st.markdown("**📊 Детализация по городам**")
-                    display_cities = city_stats.copy()
-                    display_cities['Затраты'] = display_cities['Логистика_затраты'].apply(lambda x: f"{format_number(x)} ₽")
-                    display_cities['Паллеты'] = display_cities['Кол-во паллет в заказе'].apply(lambda x: format_number(x))
-                    display_cities['Ср. цена паллеты'] = display_cities['Средняя_стоимость_паллеты'].apply(lambda x: f"{format_number(x)} ₽")
-                    display_cities['Доля логистики'] = display_cities['Доля_логистики_%'].apply(lambda x: f"{format_float(x, 1)}%")
-                    
-                    st.dataframe(
-                        display_cities[['Город', 'Затраты', 'Паллеты', 'Ср. цена паллеты', 'Доля логистики']],
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:
-                    st.info("Нет данных по городам с положительными затратами на логистику")
-            
-            st.divider()
-            
-            # ===== 6. ДЕТАЛЬНАЯ ТАБЛИЦА =====
-            st.subheader("📋 Детализация по поставкам")
-            
-            # Выбираем колонки для отображения
-            display_columns = []
-            col_mapping = {
-                'Дата': '📅 Дата',
-                'Город': '🏙️ Город',
-                'Контрагент': '🏢 Контрагент',
-                'Категория': '📁 Категория',
-                'Подкатегория': '📂 Подкатегория',
-                'Номенклатура': '📦 Номенклатура',
-                'Кол-во паллет в заказе': '📦 Паллеты',
-                'Логистика_затраты': '💰 Логистика (без НДС)',
-                'Стоимость_товара_без_НДС': '🏷️ Товары (без НДС)',
-                'Доля_логистики_в_цене_%': '📊 Доля логистики',
-                'Логистика_на_шт': '💰 Логистика на шт'
-            }
-            
-            for original, display in col_mapping.items():
-                if original in filtered_df.columns:
-                    display_columns.append(original)
-            
-            if display_columns:
-                table_df = filtered_df[display_columns].copy().head(100)
+                st.markdown("**📊 Детализация по городам**")
+                display_cities = city_stats.copy()
+                display_cities['Затраты'] = display_cities['Логистика_затраты'].apply(lambda x: f"{format_number(x)} ₽")
+                display_cities['Паллеты'] = display_cities['Кол-во паллет в заказе'].apply(lambda x: format_number(x))
+                display_cities['Ср. цена паллеты'] = display_cities['Средняя_стоимость_паллеты'].apply(lambda x: f"{format_number(x)} ₽")
                 
-                # Форматирование
-                for col in ['Кол-во паллет в заказе', 'Логистика_затраты', 'Стоимость_товара_без_НДС', 'Логистика_на_шт']:
-                    if col in table_df.columns:
-                        table_df[col] = table_df[col].apply(lambda x: format_number(x) if pd.notna(x) else "0")
-                
-                if 'Доля_логистики_в_цене_%' in table_df.columns:
-                    table_df['Доля_логистики_в_цене_%'] = table_df['Доля_логистики_в_цене_%'].apply(lambda x: f"{format_float(x, 1)}%" if pd.notna(x) else "0%")
-                
-                # Переименовываем колонки для отображения
-                table_df = table_df.rename(columns=col_mapping)
-                
-                st.dataframe(table_df, use_container_width=True)
-                st.caption(f"📄 Показано {min(100, len(table_df))} из {len(filtered_df)} записей")
-            else:
-                st.info("Нет данных для отображения в таблице")
-            
-            # ===== 7. ЭКСПОРТ =====
-            st.divider()
-            
-            # Создаём DataFrame для экспорта
-            export_cols = []
-            for col in ['Дата', 'Город', 'Контрагент', 'Категория', 'Подкатегория', 'Номенклатура', 
-                       'Кол-во паллет в заказе', 'Логистика_затраты', 'Стоимость_товара_без_НДС', 'Доля_логистики_в_цене_%']:
-                if col in filtered_df.columns:
-                    export_cols.append(col)
-            
-            if export_cols:
-                export_df = filtered_df[export_cols].copy()
-                # Форматируем дату для экспорта
-                if 'Дата' in export_df.columns:
-                    export_df['Дата'] = export_df['Дата'].dt.strftime('%Y-%m-%d')
-                csv = export_df.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-                st.download_button(
-                    "📥 Скачать отфильтрованные данные (CSV)",
-                    csv,
-                    f"logistics_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    "text/csv",
-                    use_container_width=True
+                st.dataframe(
+                    display_cities[['Город', 'Затраты', 'Паллеты', 'Ср. цена паллеты']],
+                    use_container_width=True,
+                    hide_index=True
                 )
 
 # ==========================================
