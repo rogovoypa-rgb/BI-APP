@@ -981,41 +981,29 @@ elif page == "🚚 Логистика":
             st.error(f"❌ Столбец AB не найден (всего колонок: {len(df_log.columns)})")
             st.stop()
         
-        # ===== КОЛИЧЕСТВО ПАЛЛЕТ (столбец I) - ПРАВИЛЬНЫЙ РАСЧЁТ =====
-        # Столбец I - это 9-й столбец (индекс 8)
+        # ===== КОЛИЧЕСТВО ПАЛЛЕТ (столбец I) =====
         if len(df_log.columns) > 8:
             pallet_column = df_log.columns[8]  # столбец I
             df_log['Кол-во_паллет_сырые'] = pd.to_numeric(df_log[pallet_column], errors='coerce').fillna(0)
         else:
             df_log['Кол-во_паллет_сырые'] = 0
         
-        # !!! ВАЖНО: для расчёта общего количества паллет берём уникальные отгрузки !!!
-        # Группируем по дате и городу, чтобы получить уникальное количество паллет в отгрузке
+        # Группируем для уникальных отгрузок (по дате и городу)
         unique_shipments = df_log.groupby(['Дата', 'Город']).agg({
-            'Кол-во_паллет_сырые': 'first',  # берём первое значение (они все одинаковые для одной отгрузки)
-            'Логистика_затраты': 'first',     # затраты тоже одинаковые для всей отгрузки
+            'Кол-во_паллет_сырые': 'first',
+            'Логистика_затраты': 'first',
         }).reset_index()
         
-        # Теперь уникальные отгрузки имеют правильное количество паллет
         df_unique = unique_shipments.copy()
-        
-        # Добавляем временные признаки для уникальных отгрузок
         df_unique['Год'] = df_unique['Дата'].dt.year
         df_unique['Месяц'] = df_unique['Дата'].dt.month
         df_unique['Месяц_год'] = df_unique['Дата'].dt.strftime('%Y-%m')
         
-        # Для детальной таблицы оставляем все строки (с номенклатурой), но добавляем признак "вес" строки
-        # Количество строк на одну отгрузку
+        # Количество строк на одну отгрузку (для пропорционального распределения)
         shipment_counts = df_log.groupby(['Дата', 'Город']).size().reset_index(name='Кол-во_строк')
         df_log = df_log.merge(shipment_counts, on=['Дата', 'Город'], how='left')
-        
-        # Рассчитываем "долевое" количество паллет для каждой номенклатуры
         df_log['Кол-во_паллет_скорректированное'] = df_log['Кол-во_паллет_сырые'] / df_log['Кол-во_строк']
         df_log['Кол-во_паллет'] = df_log['Кол-во_паллет_скорректированное']
-        
-        # Для обратной совместимости оставляем и сырые паллеты
-        if 'Кол-во паллет в заказе' in df_log.columns:
-            df_log['Кол-во_паллет_исходное'] = pd.to_numeric(df_log['Кол-во паллет в заказе'], errors='coerce').fillna(0)
         
         # ===== СТОИМОСТЬ ТОВАРОВ =====
         if 'Стоимость товара в заказе Без НДС' in df_log.columns:
@@ -1023,12 +1011,12 @@ elif page == "🚚 Логистика":
         else:
             df_log['Стоимость_товара'] = 0
         
-        # ===== 2. ОБЩИЕ МЕТРИКИ (на основе УНИКАЛЬНЫХ отгрузок) =====
+        # ===== 2. ОБЩИЕ МЕТРИКИ =====
         st.subheader("📊 Ключевые показатели логистики")
         
-        total_pallets = df_unique['Кол-во_паллет_сырые'].sum()  # суммируем по уникальным отгрузкам
+        total_pallets = df_unique['Кол-во_паллет_сырые'].sum()
         total_logistics_cost = df_unique['Логистика_затраты'].sum()
-        total_goods_cost = df_log['Стоимость_товара'].sum()  # стоимость товаров суммируем по всем строкам (она уникальна для каждой номенклатуры)
+        total_goods_cost = df_log['Стоимость_товара'].sum()
         avg_cost_per_pallet = total_logistics_cost / total_pallets if total_pallets > 0 else 0
         logistics_share = (total_logistics_cost / total_goods_cost * 100) if total_goods_cost > 0 else 0
         
@@ -1044,7 +1032,6 @@ elif page == "🚚 Логистика":
         with col5:
             st.metric("📈 Доля логистики", f"{format_float(logistics_share, 1)}%")
         
-        # Информация о количестве отгрузок
         st.caption(f"📊 Всего уникальных отгрузок: {len(df_unique)} | Всего строк с номенклатурой: {len(df_log)}")
         
         if total_logistics_cost == 0:
@@ -1085,14 +1072,13 @@ elif page == "🚚 Логистика":
             else:
                 selected_category = 'Все'
         
-        # Применяем фильтры к уникальным отгрузкам
+        # Применяем фильтры
         filtered_unique = df_unique.copy()
         if selected_year:
             filtered_unique = filtered_unique[filtered_unique['Год'] == selected_year]
         if selected_city != 'Все':
             filtered_unique = filtered_unique[filtered_unique['Город'] == selected_city]
         
-        # Для детальной таблицы фильтруем основной df
         filtered_df = df_log.copy()
         if selected_year:
             filtered_df = filtered_df[filtered_df['Год'] == selected_year]
@@ -1105,10 +1091,9 @@ elif page == "🚚 Логистика":
             st.warning("⚠️ Нет данных для выбранных фильтров")
             st.stop()
         
-        # ===== 4. ДИНАМИКА ПО МЕСЯЦАМ (на основе УНИКАЛЬНЫХ отгрузок) =====
+        # ===== 4. ДИНАМИКА ПО МЕСЯЦАМ =====
         st.subheader("📈 Динамика логистических затрат")
         
-        # Агрегируем по месяцам на основе уникальных отгрузок
         monthly_stats = filtered_unique.groupby('Месяц_год').agg({
             'Логистика_затраты': 'sum',
             'Кол-во_паллет_сырые': 'sum'
@@ -1116,7 +1101,6 @@ elif page == "🚚 Логистика":
         monthly_stats = monthly_stats.sort_values('Месяц_год')
         
         if not monthly_stats.empty and monthly_stats['Логистика_затраты'].sum() > 0:
-            # График затрат
             fig1 = go.Figure()
             fig1.add_trace(go.Bar(
                 x=monthly_stats['Месяц_год'],
@@ -1134,7 +1118,6 @@ elif page == "🚚 Логистика":
             )
             st.plotly_chart(fig1, use_container_width=True)
             
-            # График паллет
             fig2 = go.Figure()
             fig2.add_trace(go.Scatter(
                 x=monthly_stats['Месяц_год'],
@@ -1145,14 +1128,13 @@ elif page == "🚚 Логистика":
                 name='Паллеты'
             ))
             fig2.update_layout(
-                title='Динамика количества паллет (уникальные отгрузки)',
+                title='Динамика количества паллет',
                 xaxis_title='Месяц',
                 yaxis_title='Кол-во паллет',
                 height=400
             )
             st.plotly_chart(fig2, use_container_width=True)
             
-            # Средняя стоимость паллеты по месяцам
             monthly_stats['Средняя_стоимость_паллеты'] = monthly_stats['Логистика_затраты'] / monthly_stats['Кол-во_паллет_сырые'].replace(0, 1)
             fig3 = go.Figure()
             fig3.add_trace(go.Scatter(
@@ -1175,7 +1157,7 @@ elif page == "🚚 Логистика":
         
         st.divider()
         
-        # ===== 5. АНАЛИЗ ПО ГОРОДАМ (на основе УНИКАЛЬНЫХ отгрузок) =====
+        # ===== 5. АНАЛИЗ ПО ГОРОДАМ =====
         if 'Город' in filtered_unique.columns and filtered_unique['Логистика_затраты'].sum() > 0:
             st.subheader("🏙️ Анализ по городам")
             
@@ -1184,7 +1166,11 @@ elif page == "🚚 Логистика":
                 'Кол-во_паллет_сырые': 'sum'
             }).reset_index()
             
-            # Фильтруем города с нулевыми затратами
+            # Добавляем количество отгрузок
+            shipment_count = filtered_unique.groupby('Город').size().reset_index(name='Кол-во_отгрузок')
+            city_stats = city_stats.merge(shipment_count, on='Город', how='left')
+            
+            # Фильтруем города
             city_stats = city_stats[
                 (city_stats['Логистика_затраты'] > 0) & 
                 (city_stats['Город'].apply(lambda x: isinstance(x, str) and x not in ['nan', 'None', '']))
@@ -1192,7 +1178,6 @@ elif page == "🚚 Логистика":
             
             if not city_stats.empty:
                 city_stats['Средняя_стоимость_паллеты'] = city_stats['Логистика_затраты'] / city_stats['Кол-во_паллет_сырые'].replace(0, 1)
-                city_stats['Кол-во_отгрузок'] = filtered_unique.groupby('Город').size().reset_index(name='Отгрузок')[0] if not filtered_unique.empty else 0
                 city_stats = city_stats.sort_values('Логистика_затраты', ascending=False)
                 
                 top_cities = city_stats.head(10)
@@ -1209,25 +1194,24 @@ elif page == "🚚 Логистика":
                 fig4.update_layout(height=450)
                 st.plotly_chart(fig4, use_container_width=True)
                 
-                # Таблица
                 st.markdown("**📊 Детализация по городам**")
                 display_cities = city_stats.copy()
                 display_cities['Затраты'] = display_cities['Логистика_затраты'].apply(lambda x: f"{format_number(x)} ₽")
                 display_cities['Паллеты'] = display_cities['Кол-во_паллет_сырые'].apply(lambda x: format_number(x))
                 display_cities['Ср. цена паллеты'] = display_cities['Средняя_стоимость_паллеты'].apply(lambda x: f"{format_number(x)} ₽")
+                display_cities['Отгрузок'] = display_cities['Кол-во_отгрузок'].apply(lambda x: format_number(x))
                 
                 st.dataframe(
-                    display_cities[['Город', 'Затраты', 'Паллеты', 'Ср. цена паллеты']],
+                    display_cities[['Город', 'Затраты', 'Паллеты', 'Ср. цена паллеты', 'Отгрузок']],
                     use_container_width=True,
                     hide_index=True
                 )
         
         st.divider()
         
-        # ===== 6. ДЕТАЛЬНАЯ ТАБЛИЦА (с учётом дублирования) =====
+        # ===== 6. ДЕТАЛЬНАЯ ТАБЛИЦА =====
         st.subheader("📋 Детализация по поставкам (по номенклатурам)")
         
-        # Выбираем колонки для отображения
         display_cols = []
         col_map = {
             'Дата': '📅 Дата отгрузки',
@@ -1236,7 +1220,6 @@ elif page == "🚚 Логистика":
             'Подкатегория': '📂 Подкатегория',
             'Номенклатура': '📦 Номенклатура',
             'Кол-во_паллет': '📦 Паллеты (скорректированные)',
-            'Кол-во_паллет_сырые': '📦 Паллеты (всего в отгрузке)',
             'Логистика_затраты': '💰 Логистика (без НДС)',
             'Стоимость_товара': '🏷️ Товары (без НДС)',
             'Кол-во_строк': '📋 Строк в отгрузке'
@@ -1249,13 +1232,10 @@ elif page == "🚚 Логистика":
         if display_cols:
             table_df = filtered_df[display_cols].copy().head(100)
             
-            # Форматирование
             if 'Логистика_затраты' in table_df.columns:
                 table_df['Логистика_затраты'] = table_df['Логистика_затраты'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Кол-во_паллет' in table_df.columns:
                 table_df['Кол-во_паллет'] = table_df['Кол-во_паллет'].apply(lambda x: format_number(x) if pd.notna(x) else "0")
-            if 'Кол-во_паллет_сырые' in table_df.columns:
-                table_df['Кол-во_паллет_сырые'] = table_df['Кол-во_паллет_сырые'].apply(lambda x: format_number(x) if pd.notna(x) else "0")
             if 'Стоимость_товара' in table_df.columns:
                 table_df['Стоимость_товара'] = table_df['Стоимость_товара'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Кол-во_строк' in table_df.columns:
@@ -1263,14 +1243,10 @@ elif page == "🚚 Логистика":
             if 'Дата' in table_df.columns:
                 table_df['Дата'] = table_df['Дата'].dt.strftime('%d.%m.%Y')
             
-            # Переименовываем
             table_df = table_df.rename(columns=col_map)
-            
             st.dataframe(table_df, use_container_width=True)
             st.caption(f"📄 Показано {min(100, len(table_df))} из {len(filtered_df)} записей")
-            
-            # Предупреждение о дублировании
-            st.info("💡 **Примечание:** Паллеты в этой таблице распределены пропорционально между номенклатурами в одной отгрузке. Общее количество паллет за период считается по уникальным отгрузкам.")
+            st.info("💡 **Примечание:** Паллеты распределены пропорционально между номенклатурами в одной отгрузке. Общее количество паллет считается по уникальным отгрузкам.")
         else:
             st.info("Нет данных для отображения")
 
