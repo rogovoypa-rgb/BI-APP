@@ -1035,18 +1035,27 @@ elif page == "🚚 Логистика":
                 selected_year = None
         
         with col_f2:
-            # Фильтр по городу
-            cities = ['Все'] + sorted(df_log['Город'].dropna().unique().tolist())
+            # Фильтр по городу - ИСПРАВЛЕНО
+            cities_list = df_log['Город'].dropna().unique().tolist()
+            cities_list = [str(c) for c in cities_list if pd.notna(c) and str(c) != 'nan']
+            cities_list = sorted(set(cities_list))  # Убираем дубликаты и сортируем
+            cities = ['Все'] + cities_list
             selected_city = st.selectbox("🏙️ Город", cities)
         
         with col_f3:
             # Фильтр по категории
-            categories = ['Все'] + sorted(df_log['Категория'].dropna().unique().tolist())
+            categories_list = df_log['Категория'].dropna().unique().tolist()
+            categories_list = [str(c) for c in categories_list if pd.notna(c) and str(c) != 'nan']
+            categories_list = sorted(set(categories_list))
+            categories = ['Все'] + categories_list
             selected_category = st.selectbox("📁 Категория", categories)
         
         with col_f4:
             # Фильтр по подкатегории
-            subcategories = ['Все'] + sorted(df_log['Подкатегория'].dropna().unique().tolist())
+            subcategories_list = df_log['Подкатегория'].dropna().unique().tolist()
+            subcategories_list = [str(c) for c in subcategories_list if pd.notna(c) and str(c) != 'nan']
+            subcategories_list = sorted(set(subcategories_list))
+            subcategories = ['Все'] + subcategories_list
             selected_subcategory = st.selectbox("📂 Подкатегория", subcategories)
         
         # Применяем фильтры
@@ -1060,10 +1069,13 @@ elif page == "🚚 Логистика":
         if selected_subcategory != 'Все':
             filtered_df = filtered_df[filtered_df['Подкатегория'] == selected_subcategory]
         
-        st.divider()
-        
-        # ===== 4. ДИНАМИКА ПО МЕСЯЦАМ =====
-        if not filtered_df.empty:
+        # Проверяем, остались ли данные после фильтрации
+        if filtered_df.empty:
+            st.warning("⚠️ Нет данных для выбранных фильтров. Попробуйте изменить параметры фильтрации.")
+        else:
+            st.divider()
+            
+            # ===== 4. ДИНАМИКА ПО МЕСЯЦАМ =====
             st.subheader("📈 Динамика логистических затрат")
             
             # Агрегация по месяцам
@@ -1111,117 +1123,119 @@ elif page == "🚚 Логистика":
                     height=400
                 )
                 st.plotly_chart(fig2, use_container_width=True)
-        
-        st.divider()
-        
-        # ===== 5. АНАЛИЗ ПО ГОРОДАМ =====
-        if not filtered_df.empty and 'Город' in filtered_df.columns:
-            st.subheader("🏙️ Анализ по городам")
             
-            city_stats = filtered_df.groupby('Город').agg({
-                'Итого совокупная Стоимость доставки 1 паллета без НДС': 'sum',
-                'Кол-во паллет в заказе': 'sum',
-                'Стоимость_товара_без_НДС': 'sum'
-            }).reset_index()
+            st.divider()
             
-            city_stats['Средняя_стоимость_паллеты'] = city_stats['Итого совокупная Стоимость доставки 1 паллета без НДС'] / city_stats['Кол-во паллет в заказе'].replace(0, 1)
-            city_stats['Доля_логистики_%'] = (city_stats['Итого совокупная Стоимость доставки 1 паллета без НДС'] / city_stats['Стоимость_товара_без_НДС'].replace(0, 1) * 100)
-            city_stats = city_stats.sort_values('Итого совокупная Стоимость доставки 1 паллета без НДС', ascending=False)
+            # ===== 5. АНАЛИЗ ПО ГОРОДАМ =====
+            if 'Город' in filtered_df.columns and len(filtered_df['Город'].dropna()) > 0:
+                st.subheader("🏙️ Анализ по городам")
+                
+                city_stats = filtered_df.groupby('Город').agg({
+                    'Итого совокупная Стоимость доставки 1 паллета без НДС': 'sum',
+                    'Кол-во паллет в заказе': 'sum',
+                    'Стоимость_товара_без_НДС': 'sum'
+                }).reset_index()
+                
+                # Фильтруем города с нулевыми значениями
+                city_stats = city_stats[city_stats['Итого совокупная Стоимость доставки 1 паллета без НДС'] > 0]
+                
+                if not city_stats.empty:
+                    city_stats['Средняя_стоимость_паллеты'] = city_stats['Итого совокупная Стоимость доставки 1 паллета без НДС'] / city_stats['Кол-во паллет в заказе'].replace(0, 1)
+                    city_stats['Доля_логистики_%'] = (city_stats['Итого совокупная Стоимость доставки 1 паллета без НДС'] / city_stats['Стоимость_товара_без_НДС'].replace(0, 1) * 100)
+                    city_stats = city_stats.sort_values('Итого совокупная Стоимость доставки 1 паллета без НДС', ascending=False)
+                    
+                    # Топ-10 городов по затратам
+                    top_cities = city_stats.head(10)
+                    
+                    fig3 = px.bar(
+                        top_cities,
+                        x='Город',
+                        y='Итого совокупная Стоимость доставки 1 паллета без НДС',
+                        title='Топ-10 городов по затратам на логистику',
+                        labels={'Итого совокупная Стоимость доставки 1 паллета без НДС': 'Затраты (₽)'},
+                        color='Средняя_стоимость_паллеты',
+                        color_continuous_scale='Blues'
+                    )
+                    fig3.update_layout(height=450)
+                    st.plotly_chart(fig3, use_container_width=True)
+                    
+                    # Таблица с городами
+                    st.markdown("**📊 Детализация по городам**")
+                    display_cities = city_stats.copy()
+                    display_cities['Затраты'] = display_cities['Итого совокупная Стоимость доставки 1 паллета без НДС'].apply(lambda x: f"{format_number(x)} ₽")
+                    display_cities['Паллеты'] = display_cities['Кол-во паллет в заказе'].apply(lambda x: format_number(x))
+                    display_cities['Ср. цена паллеты'] = display_cities['Средняя_стоимость_паллеты'].apply(lambda x: f"{format_number(x)} ₽")
+                    display_cities['Доля логистики'] = display_cities['Доля_логистики_%'].apply(lambda x: f"{format_float(x, 1)}%")
+                    
+                    st.dataframe(
+                        display_cities[['Город', 'Затраты', 'Паллеты', 'Ср. цена паллеты', 'Доля логистики']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
             
-            # Топ-10 городов по затратам
-            top_cities = city_stats.head(10)
+            st.divider()
             
-            fig3 = px.bar(
-                top_cities,
-                x='Город',
-                y='Итого совокупная Стоимость доставки 1 паллета без НДС',
-                title='Топ-10 городов по затратам на логистику',
-                labels={'Итого совокупная Стоимость доставки 1 паллета без НДС': 'Затраты (₽)'},
-                color='Средняя_стоимость_паллеты',
-                color_continuous_scale='Blues'
-            )
-            fig3.update_layout(height=450)
-            st.plotly_chart(fig3, use_container_width=True)
+            # ===== 6. ДЕТАЛЬНАЯ ТАБЛИЦА =====
+            st.subheader("📋 Детализация по поставкам")
             
-            # Таблица с городами
-            st.markdown("**📊 Детализация по городам**")
-            display_cities = city_stats.copy()
-            display_cities['Затраты'] = display_cities['Итого совокупная Стоимость доставки 1 паллета без НДС'].apply(lambda x: f"{format_number(x)} ₽")
-            display_cities['Паллеты'] = display_cities['Кол-во паллет в заказе'].apply(lambda x: format_number(x))
-            display_cities['Ср. цена паллеты'] = display_cities['Средняя_стоимость_паллеты'].apply(lambda x: f"{format_number(x)} ₽")
-            display_cities['Доля логистики'] = display_cities['Доля_логистики_%'].apply(lambda x: f"{format_float(x, 1)}%")
+            # Выбираем колонки для отображения
+            display_columns = []
+            col_mapping = {
+                'Дата': '📅 Дата',
+                'Город': '🏙️ Город',
+                'Контрагент': '🏢 Контрагент',
+                'Категория': '📁 Категория',
+                'Подкатегория': '📂 Подкатегория',
+                'Номенклатура': '📦 Номенклатура',
+                'Кол-во паллет в заказе': '📦 Паллеты',
+                'Итого совокупная Стоимость доставки 1 паллета без НДС': '💰 Логистика (без НДС)',
+                'Стоимость_товара_без_НДС': '🏷️ Товары (без НДС)',
+                'Доля_логистики_в_цене_%': '📊 Доля логистики',
+                'Логистика_на_шт': '💰 Логистика на шт'
+            }
             
-            st.dataframe(
-                display_cities[['Город', 'Затраты', 'Паллеты', 'Ср. цена паллеты', 'Доля логистики']],
-                use_container_width=True,
-                hide_index=True
-            )
-        
-        st.divider()
-        
-        # ===== 6. ДЕТАЛЬНАЯ ТАБЛИЦА =====
-        st.subheader("📋 Детализация по поставкам")
-        
-        # Выбираем колонки для отображения
-        display_columns = []
-        col_mapping = {
-            'Дата': '📅 Дата',
-            'Город': '🏙️ Город',
-            'Контрагент': '🏢 Контрагент',
-            'Категория': '📁 Категория',
-            'Подкатегория': '📂 Подкатегория',
-            'Номенклатура': '📦 Номенклатура',
-            'Кол-во паллет в заказе': '📦 Паллеты',
-            'Итого совокупная Стоимость доставки 1 паллета без НДС': '💰 Логистика (без НДС)',
-            'Стоимость_товара_без_НДС': '🏷️ Товары (без НДС)',
-            'Доля_логистики_в_цене_%': '📊 Доля логистики',
-            'Логистика_на_шт': '💰 Логистика на шт'
-        }
-        
-        for original, display in col_mapping.items():
-            if original in filtered_df.columns:
-                display_columns.append(original)
-        
-        if display_columns:
-            table_df = filtered_df[display_columns].copy().head(100)
+            for original, display in col_mapping.items():
+                if original in filtered_df.columns:
+                    display_columns.append(original)
             
-            # Форматирование
-            for col in ['Кол-во паллет в заказе', 'Итого совокупная Стоимость доставки 1 паллета без НДС', 'Стоимость_товара_без_НДС', 'Логистика_на_шт']:
-                if col in table_df.columns:
-                    table_df[col] = table_df[col].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+            if display_columns:
+                table_df = filtered_df[display_columns].copy().head(100)
+                
+                # Форматирование
+                for col in ['Кол-во паллет в заказе', 'Итого совокупная Стоимость доставки 1 паллета без НДС', 'Стоимость_товара_без_НДС', 'Логистика_на_шт']:
+                    if col in table_df.columns:
+                        table_df[col] = table_df[col].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+                
+                if 'Доля_логистики_в_цене_%' in table_df.columns:
+                    table_df['Доля_логистики_в_цене_%'] = table_df['Доля_логистики_в_цене_%'].apply(lambda x: f"{format_float(x, 1)}%" if pd.notna(x) else "0%")
+                
+                # Переименовываем колонки для отображения
+                table_df = table_df.rename(columns=col_mapping)
+                
+                st.dataframe(table_df, use_container_width=True)
+                st.caption(f"📄 Показано {min(100, len(table_df))} из {len(filtered_df)} записей")
             
-            if 'Доля_логистики_в_цене_%' in table_df.columns:
-                table_df['Доля_логистики_в_цене_%'] = table_df['Доля_логистики_в_цене_%'].apply(lambda x: f"{format_float(x, 1)}%" if pd.notna(x) else "0%")
+            # ===== 7. ЭКСПОРТ =====
+            st.divider()
             
-            # Переименовываем колонки для отображения
-            table_df = table_df.rename(columns=col_mapping)
+            # Создаём DataFrame для экспорта
+            export_cols = []
+            for col in ['Дата', 'Город', 'Контрагент', 'Категория', 'Подкатегория', 'Номенклатура', 
+                       'Кол-во паллет в заказе', 'Итого совокупная Стоимость доставки 1 паллета без НДС', 
+                       'Стоимость_товара_без_НДС', 'Доля_логистики_в_цене_%']:
+                if col in filtered_df.columns:
+                    export_cols.append(col)
             
-            st.dataframe(table_df, use_container_width=True)
-            st.caption(f"📄 Показано {min(100, len(table_df))} из {len(filtered_df)} записей")
-        
-        # ===== 7. ЭКСПОРТ =====
-        st.divider()
-        
-        export_df = filtered_df[[
-            'Дата', 'Город', 'Контрагент', 'Категория', 'Подкатегория',
-            'Номенклатура', 'Кол-во паллет в заказе',
-            'Итого совокупная Стоимость доставки 1 паллета без НДС',
-            'Стоимость_товара_без_НДС', 'Доля_логистики_в_цене_%'
-        ]].copy()
-        
-        csv = export_df.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-        st.download_button(
-            "📥 Скачать отфильтрованные данные (CSV)",
-            csv,
-            f"logistics_export_{datetime.now().strftime('%Y%m%d')}.csv",
-            "text/csv",
-            use_container_width=True
-        )
-    st.title("🚚 Аналитика затрат на логистику")
-    if logistics_df.empty:
-        st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
-    else:
-        st.dataframe(logistics_df.head(100), use_container_width=True)
+            if export_cols:
+                export_df = filtered_df[export_cols].copy()
+                csv = export_df.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                st.download_button(
+                    "📥 Скачать отфильтрованные данные (CSV)",
+                    csv,
+                    f"logistics_export_{datetime.now().strftime('%Y%m%d')}.csv",
+                    "text/csv",
+                    use_container_width=True
+                )
 
 # ==========================================
 # СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ
