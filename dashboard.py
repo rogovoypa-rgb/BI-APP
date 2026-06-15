@@ -956,6 +956,25 @@ elif page == "🚚 Логистика":
             - `Стоимость товара в заказе Без НДС`
             """)
     else:
+                # ===== ДИАГНОСТИКА: показываем реальные колонки с затратами =====
+        with st.expander("🔧 Диагностика (нажмите, чтобы увидеть структуру данных)"):
+            st.write("**Колонки в файле logistics_data.xlsx:**")
+            st.write(list(df_log.columns))
+            
+            # Ищем колонки, которые могут содержать затраты
+            cost_columns = [col for col in df_log.columns if any(word in col.lower() for word in ['стоимость', 'затрат', 'логистик', 'доставк', 'pallet', 'plm'])]
+            st.write("**Потенциальные колонки с затратами:**")
+            st.write(cost_columns)
+            
+            # Показываем первые 5 строк с этими колонками
+            if cost_columns:
+                st.write("**Примеры данных (первые 5 строк):**")
+                st.dataframe(df_log[cost_columns].head(5))
+            
+            # Проверяем, есть ли ненулевые значения
+            for col in cost_columns:
+                non_zero = (df_log[col] > 0).sum()
+                st.write(f"Колонка `{col}`: {non_zero} ненулевых значений из {len(df_log)}")
         # ===== 1. ПРЕДОБРАБОТКА ДАННЫХ =====
         df_log = logistics_df.copy()
         
