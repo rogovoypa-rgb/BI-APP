@@ -994,9 +994,12 @@ elif page == "📊 Анализ себестоимости":
                         periods_sorted = monthly_data.index.tolist()
                         periods_ru = []
                         for p in periods_sorted:
-                            year, month = p.split('-')
-                            month_ru = month_names_ru[int(month)]
-                            periods_ru.append(f"{year} {month_ru}")
+                            try:
+                                year, month = p.split('-')
+                                month_ru = month_names_ru[int(month)]
+                                periods_ru.append(f"{year} {month_ru}")
+                            except (ValueError, KeyError):
+                                periods_ru.append(p)
                         
                         avg = monthly_data.mean()
                         std = monthly_data.std() if len(monthly_data) > 1 else 0
@@ -1209,43 +1212,40 @@ elif page == "📊 Анализ себестоимости":
                         iqr_res = stat['IQR_анализ']
                         
                         # Добавляем границы IQR
-                        fig.add_hline(
-                            y=iqr_res['lower_bound'],
-                            line_dash="dash",
-                            line_color="orange",
-                            annotation_text=f"Нижняя граница: {format_number(iqr_res['lower_bound'])}",
-                            annotation_position="bottom left"
-                        )
-                        fig.add_hline(
-                            y=iqr_res['upper_bound'],
-                            line_dash="dash",
-                            line_color="orange",
-                            annotation_text=f"Верхняя граница: {format_number(iqr_res['upper_bound'])}",
-                            annotation_position="top left"
-                        )
+                        if iqr_res['lower_bound'] is not None:
+                            fig.add_hline(
+                                y=iqr_res['lower_bound'],
+                                line_dash="dash",
+                                line_color="orange",
+                                annotation_text=f"Нижняя граница: {format_number(iqr_res['lower_bound'])}",
+                                annotation_position="bottom left"
+                            )
+                        if iqr_res['upper_bound'] is not None:
+                            fig.add_hline(
+                                y=iqr_res['upper_bound'],
+                                line_dash="dash",
+                                line_color="orange",
+                                annotation_text=f"Верхняя граница: {format_number(iqr_res['upper_bound'])}",
+                                annotation_position="top left"
+                            )
                         
-                        # Выделяем выбросы на графике (ИСПРАВЛЕНО)
+                        # Выделяем выбросы на графике
                         if iqr_res['outliers']:
-                            outlier_indices = iqr_res['outlier_indices']
-                            outlier_values = iqr_res['outliers']
+                            # Безопасно собираем выбросы для отображения
+                            outlier_periods = []
+                            outlier_y = []
                             
-                            # Фильтруем индексы, которые находятся в пределах списка periods
-                            valid_indices = []
-                            valid_outliers = []
-                            for i, orig_idx in enumerate(outlier_indices):
-                                if orig_idx < len(periods):
-                                    valid_indices.append(orig_idx)
-                                    valid_outliers.append(outlier_values[i] if i < len(outlier_values) else None)
+                            # Пробуем сопоставить выбросы с периодами
+                            for i, val in enumerate(iqr_res['outliers']):
+                                if i < len(periods):
+                                    outlier_periods.append(periods[i])
+                                    outlier_y.append(val)
                             
-                            # Собираем данные для отображения
-                            outlier_periods = [periods[i] for i in valid_indices if i < len(periods)]
-                            outlier_y = [costs[i] for i in valid_indices if i < len(costs)]
-                            
-                            # Также пробуем использовать значения из iqr_res['outliers']
+                            # Если не удалось сопоставить, используем первые N периодов
                             if not outlier_periods and iqr_res['outliers']:
-                                # Если не нашли по индексам, просто показываем выбросы как точки
-                                outlier_y = iqr_res['outliers'][:len(periods)]
-                                outlier_periods = periods[:len(outlier_y)]
+                                max_points = min(len(periods), len(iqr_res['outliers']))
+                                outlier_periods = periods[:max_points]
+                                outlier_y = iqr_res['outliers'][:max_points]
                             
                             if outlier_periods and outlier_y:
                                 fig.add_trace(go.Scatter(
@@ -1291,7 +1291,7 @@ elif page == "📊 Анализ себестоимости":
                     st.plotly_chart(fig, use_container_width=True, key=f"cost_chart_{idx}_{nomen[:30]}")
                 
                 # Если включён IQR-анализ, показываем дополнительный boxplot для номенклатуры
-                if show_iqr_analysis and stat['Количество_периодов'] >= 4:
+                if show_iqr_analysis and stat['Количество_периодов'] >= 4 and stat['IQR_анализ']['q1'] is not None:
                     with st.expander(f"📊 Boxplot для {nomen} (IQR-анализ)"):
                         fig_box_nomen = go.Figure()
                         fig_box_nomen.add_trace(go.Box(
@@ -1365,7 +1365,6 @@ elif page == "📊 Анализ себестоимости":
                     if 'Тренд, %' in display_summary.columns:
                         display_summary['Тренд, %'] = display_summary['Тренд, %'].apply(lambda x: f"{format_float(x, 1)}%")
                     
-                    # Подсвечиваем строки с выбросами
                     st.dataframe(
                         display_summary,
                         use_container_width=True,
@@ -1436,7 +1435,6 @@ elif page == "📊 Анализ себестоимости":
                             height=400
                         )
                         st.plotly_chart(fig_compare, use_container_width=True)
-
 # ==========================================
 # СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
 # ==========================================
