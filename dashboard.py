@@ -783,7 +783,7 @@ elif page == "🚚 Логистика":
             st.info("Нет данных для отображения")
 
 # ==========================================
-# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ
+# СТРАНИЦА 3: АНАЛИЗ СЕБЕСТОИМОСТИ (С IQR-АНАЛИЗОМ)
 # ==========================================
 elif page == "📊 Анализ себестоимости":
     st.title("📊 Анализ себестоимости продукции")
@@ -811,6 +811,59 @@ elif page == "📊 Анализ себестоимости":
     # Рассчитываем себестоимость на единицу продукции
     df_cost['Себестоимость_единицы'] = df_cost['Себестоимость'] / df_cost['Количество']
     df_cost['Себестоимость_единицы'] = df_cost['Себестоимость_единицы'].replace([float('inf'), -float('inf')], 0).fillna(0)
+    
+    # ==========================================
+    # ФУНКЦИЯ ДЛЯ IQR-АНАЛИЗА
+    # ==========================================
+    def detect_outliers_iqr(data, multiplier=1.5):
+        """
+        Определяет выбросы методом IQR (межквартильного расстояния)
+        
+        Args:
+            data: массив значений
+            multiplier: множитель для границ (по умолчанию 1.5)
+        
+        Returns:
+            dict: {'outliers': массив выбросов, 'q1': Q1, 'q3': Q3, 
+                   'lower_bound': нижняя граница, 'upper_bound': верхняя граница,
+                   'outlier_indices': индексы выбросов}
+        """
+        data_clean = data.dropna()
+        if len(data_clean) < 4:
+            return {
+                'outliers': [],
+                'q1': None,
+                'q3': None,
+                'lower_bound': None,
+                'upper_bound': None,
+                'outlier_indices': [],
+                'iqr': None
+            }
+        
+        q1 = data_clean.quantile(0.25)
+        q3 = data_clean.quantile(0.75)
+        iqr = q3 - q1
+        
+        lower_bound = q1 - multiplier * iqr
+        upper_bound = q3 + multiplier * iqr
+        
+        outlier_mask = (data < lower_bound) | (data > upper_bound)
+        outliers = data[outlier_mask]
+        outlier_indices = data.index[outlier_mask].tolist()
+        
+        return {
+            'outliers': outliers.tolist(),
+            'q1': q1,
+            'q3': q3,
+            'lower_bound': lower_bound,
+            'upper_bound': upper_bound,
+            'outlier_indices': outlier_indices,
+            'iqr': iqr
+        }
+    
+    # ==========================================
+    # ОСНОВНОЙ КОД СТРАНИЦЫ
+    # ==========================================
     
     # Определяем столбец для группировки
     group_col = None
@@ -840,11 +893,22 @@ elif page == "📊 Анализ себестоимости":
         st.warning("Нет данных для отображения")
     else:
         # ===== ВЫБОР ГРУППЫ =====
-        selected_group = st.selectbox(
-            "📂 Выберите группу номенклатур",
-            unique_groups,
-            help=f"Группировка по столбцу '{group_col}'"
-        )
+        col_select1, col_select2 = st.columns([2, 1])
+        
+        with col_select1:
+            selected_group = st.selectbox(
+                "📂 Выберите группу номенклатур",
+                unique_groups,
+                help=f"Группировка по столбцу '{group_col}'"
+            )
+        
+        with col_select2:
+            # Добавляем переключатель для IQR-анализа
+            show_iqr_analysis = st.checkbox(
+                "📊 Показать IQR-анализ выбросов",
+                value=True,
+                help="Метод межквартильного расстояния для обнаружения выбросов"
+            )
         
         # Фильтруем номенклатуры по выбранной группе
         df_group = df_cost[df_cost[group_col] == selected_group]
@@ -941,13 +1005,16 @@ elif page == "📊 Анализ себестоимости":
                         category = df_nomen['Категория'].iloc[0] if 'Категория' in df_nomen.columns else ''
                         nomen_group = df_nomen[group_col].iloc[0] if group_col in df_nomen.columns else ''
                         
-                        # Считаем тренд (положительный/отрицательный)
+                        # Считаем тренд
                         if len(monthly_data) >= 2:
                             first_val = monthly_data.iloc[0]
                             last_val = monthly_data.iloc[-1]
                             trend = (last_val - first_val) / first_val * 100 if first_val > 0 else 0
                         else:
                             trend = 0
+                        
+                        # ===== IQR-АНАЛИЗ =====
+                        iqr_result = detect_outliers_iqr(monthly_data, multiplier=1.5)
                         
                         nomen_stats.append({
                             'Номенклатура': nomen,
@@ -964,7 +1031,9 @@ elif page == "📊 Анализ себестоимости":
                             'Количество_периодов': len(monthly_data),
                             'Данные': monthly_data.values.tolist(),
                             'Периоды': periods_ru,
-                            'Периоды_сорт': periods_sorted
+                            'Периоды_сорт': periods_sorted,
+                            'IQR_анализ': iqr_result,
+                            'Количество_выбросов': len(iqr_result['outliers']) if iqr_result['outliers'] else 0
                         })
             
             # ===== СОРТИРУЕМ =====
@@ -998,6 +1067,87 @@ elif page == "📊 Анализ себестоимости":
             st.subheader(f"📦 Номенклатуры в группе: {selected_group}")
             st.caption(f"📅 {period_caption} | 📊 Сортировка: {sort_caption} | Всего номенклатур: {len(nomen_stats)}")
             
+            # ===== IQR-СВОДКА ПО ВСЕЙ ГРУППЕ =====
+            if show_iqr_analysis and len(nomen_stats) > 0:
+                # Собираем все данные по себестоимости для всей группы
+                all_costs = []
+                for stat in nomen_stats:
+                    all_costs.extend(stat['Данные'])
+                
+                if all_costs:
+                    all_costs_series = pd.Series(all_costs)
+                    iqr_all = detect_outliers_iqr(all_costs_series, multiplier=1.5)
+                    
+                    if iqr_all['q1'] is not None:
+                        st.subheader("📊 IQR-АНАЛИЗ ВСЕЙ ГРУППЫ")
+                        
+                        col_iqr1, col_iqr2, col_iqr3, col_iqr4 = st.columns(4)
+                        with col_iqr1:
+                            st.metric("Q1 (25-й перцентиль)", f"{format_number(iqr_all['q1'])} ₽/ед.")
+                        with col_iqr2:
+                            st.metric("Q3 (75-й перцентиль)", f"{format_number(iqr_all['q3'])} ₽/ед.")
+                        with col_iqr3:
+                            st.metric("IQR (Q3 - Q1)", f"{format_number(iqr_all['iqr'])} ₽/ед.")
+                        with col_iqr4:
+                            st.metric("🔴 Количество выбросов", len(iqr_all['outliers']))
+                        
+                        # Границы
+                        col_bound1, col_bound2 = st.columns(2)
+                        with col_bound1:
+                            st.metric("⬇️ Нижняя граница", f"{format_number(iqr_all['lower_bound'])} ₽/ед.", 
+                                     help=f"Q1 - 1.5 × IQR = {format_number(iqr_all['q1'])} - 1.5 × {format_number(iqr_all['iqr'])}")
+                        with col_bound2:
+                            st.metric("⬆️ Верхняя граница", f"{format_number(iqr_all['upper_bound'])} ₽/ед.",
+                                     help=f"Q3 + 1.5 × IQR = {format_number(iqr_all['q3'])} + 1.5 × {format_number(iqr_all['iqr'])}")
+                        
+                        # Boxplot для всей группы
+                        st.subheader("📦 Boxplot всей группы")
+                        fig_box = go.Figure()
+                        fig_box.add_trace(go.Box(
+                            y=all_costs,
+                            name=selected_group,
+                            boxmean='sd',
+                            marker_color='#2E86AB',
+                            line_color='#1A5276'
+                        ))
+                        fig_box.update_layout(
+                            title=f'Распределение себестоимости в группе "{selected_group}"',
+                            yaxis_title='Себестоимость (₽/ед.)',
+                            height=400,
+                            showlegend=False
+                        )
+                        st.plotly_chart(fig_box, use_container_width=True)
+                        
+                        # Список номенклатур с выбросами
+                        if len(iqr_all['outliers']) > 0:
+                            st.warning(f"⚠️ Обнаружено {len(iqr_all['outliers'])} выбросов в группе")
+                            
+                            # Находим номенклатуры с выбросами
+                            outlier_nomenclatures = []
+                            for stat in nomen_stats:
+                                if stat['Количество_выбросов'] > 0:
+                                    outlier_nomenclatures.append({
+                                        'Номенклатура': stat['Номенклатура'],
+                                        'Количество_выбросов': stat['Количество_выбросов'],
+                                        'Максимум': stat['Максимум'],
+                                        'Минимум': stat['Минимум'],
+                                        'Средняя': stat['Средняя']
+                                    })
+                            
+                            if outlier_nomenclatures:
+                                outlier_df = pd.DataFrame(outlier_nomenclatures)
+                                outlier_df = outlier_df.sort_values('Количество_выбросов', ascending=False)
+                                st.markdown("**🔴 Номенклатуры с выбросами:**")
+                                display_outliers = outlier_df.copy()
+                                for col in ['Максимум', 'Минимум', 'Средняя']:
+                                    if col in display_outliers.columns:
+                                        display_outliers[col] = display_outliers[col].apply(lambda x: f"{format_number(x)} ₽/ед.")
+                                st.dataframe(display_outliers, use_container_width=True, hide_index=True)
+                        else:
+                            st.success("✅ Выбросы в группе не обнаружены")
+                        
+                        st.divider()
+            
             # ===== ДЛЯ КАЖДОЙ НОМЕНКЛАТУРЫ СТРОИМ ГРАФИК =====
             for idx, stat in enumerate(nomen_stats):
                 nomen = stat['Номенклатура']
@@ -1010,6 +1160,10 @@ elif page == "📊 Анализ себестоимости":
                     # Определяем цвет тренда
                     trend_color = "🟢" if stat['Тренд_%'] <= 0 else "🔴"
                     trend_text = f"{trend_color} {format_float(stat['Тренд_%'], 1)}%"
+                    
+                    # Индикатор выбросов
+                    outlier_indicator = "🔴" if stat['Количество_выбросов'] > 0 else "🟢"
+                    outlier_text = f"{stat['Количество_выбросов']}" if stat['Количество_выбросов'] > 0 else "нет"
                     
                     st.markdown(f"""
                     <div style='
@@ -1027,6 +1181,8 @@ elif page == "📊 Анализ себестоимости":
                         <div style='font-size: 16px; font-weight: bold; color: #5CB85C;'>{format_number(stat['Минимум'])} ₽/ед.</div>
                         <div style='font-size: 13px; color: #666; margin-top: 8px;'>Тренд:</div>
                         <div style='font-size: 16px; font-weight: bold;'>{trend_text}</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 8px;'>Выбросы (IQR):</div>
+                        <div style='font-size: 16px; font-weight: bold;'>{outlier_indicator} {outlier_text}</div>
                         <div style='font-size: 13px; color: #666; margin-top: 8px;'>Стд. отклонение:</div>
                         <div style='font-size: 14px;'>{format_number(stat['Стд_отклонение'])}</div>
                         <div style='font-size: 13px; color: #666; margin-top: 8px;'>Периодов:</div>
@@ -1047,6 +1203,43 @@ elif page == "📊 Анализ себестоимости":
                         name='Себестоимость',
                         hovertemplate='%{x}<br>Себестоимость: %{y:.2f} ₽/ед.<extra></extra>'
                     ))
+                    
+                    # Если включён IQR-анализ и есть выбросы, выделяем их
+                    if show_iqr_analysis and stat['IQR_анализ']['q1'] is not None:
+                        iqr_res = stat['IQR_анализ']
+                        
+                        # Добавляем границы IQR
+                        fig.add_hline(
+                            y=iqr_res['lower_bound'],
+                            line_dash="dash",
+                            line_color="orange",
+                            annotation_text=f"Нижняя граница: {format_number(iqr_res['lower_bound'])}",
+                            annotation_position="bottom left"
+                        )
+                        fig.add_hline(
+                            y=iqr_res['upper_bound'],
+                            line_dash="dash",
+                            line_color="orange",
+                            annotation_text=f"Верхняя граница: {format_number(iqr_res['upper_bound'])}",
+                            annotation_position="top left"
+                        )
+                        
+                        # Выделяем выбросы на графике
+                        if iqr_res['outliers']:
+                            outlier_indices = iqr_res['outlier_indices']
+                            outlier_values = iqr_res['outliers']
+                            outlier_periods = [periods[i] for i in outlier_indices if i < len(periods)]
+                            outlier_y = [costs[i] for i in outlier_indices if i < len(costs)]
+                            
+                            if outlier_periods and outlier_y:
+                                fig.add_trace(go.Scatter(
+                                    x=outlier_periods,
+                                    y=outlier_y,
+                                    mode='markers',
+                                    marker=dict(size=15, color='red', symbol='x'),
+                                    name='Выбросы (IQR)',
+                                    hovertemplate='%{x}<br>⚠️ ВЫБРОС: %{y:.2f} ₽/ед.<extra></extra>'
+                                ))
                     
                     # Средняя линия
                     fig.add_hline(
@@ -1081,6 +1274,48 @@ elif page == "📊 Анализ себестоимости":
                     
                     st.plotly_chart(fig, use_container_width=True, key=f"cost_chart_{idx}_{nomen[:30]}")
                 
+                # Если включён IQR-анализ, показываем дополнительный boxplot для номенклатуры
+                if show_iqr_analysis and stat['Количество_периодов'] >= 4:
+                    with st.expander(f"📊 Boxplot для {nomen} (IQR-анализ)"):
+                        fig_box_nomen = go.Figure()
+                        fig_box_nomen.add_trace(go.Box(
+                            y=costs,
+                            name=nomen,
+                            boxmean='sd',
+                            marker_color='#2E86AB',
+                            line_color='#1A5276'
+                        ))
+                        
+                        # Добавляем точки выбросов
+                        if stat['IQR_анализ']['outliers']:
+                            iqr_res = stat['IQR_анализ']
+                            fig_box_nomen.add_trace(go.Scatter(
+                                y=iqr_res['outliers'],
+                                mode='markers',
+                                marker=dict(size=10, color='red', symbol='x'),
+                                name='Выбросы'
+                            ))
+                        
+                        fig_box_nomen.update_layout(
+                            title=f'Распределение себестоимости для "{nomen}"',
+                            yaxis_title='Себестоимость (₽/ед.)',
+                            height=300,
+                            showlegend=True
+                        )
+                        st.plotly_chart(fig_box_nomen, use_container_width=True)
+                        
+                        # Выводим детали IQR
+                        iqr_res = stat['IQR_анализ']
+                        col_iqr_d1, col_iqr_d2, col_iqr_d3, col_iqr_d4 = st.columns(4)
+                        with col_iqr_d1:
+                            st.metric("Q1", f"{format_number(iqr_res['q1'])} ₽/ед.")
+                        with col_iqr_d2:
+                            st.metric("Q3", f"{format_number(iqr_res['q3'])} ₽/ед.")
+                        with col_iqr_d3:
+                            st.metric("IQR", f"{format_number(iqr_res['iqr'])} ₽/ед.")
+                        with col_iqr_d4:
+                            st.metric("Выбросов", len(iqr_res['outliers']))
+                
                 st.divider()
             
             # ===== СВОДНАЯ ТАБЛИЦА =====
@@ -1099,6 +1334,7 @@ elif page == "📊 Анализ себестоимости":
                         'Последнее': stat['Последнее'],
                         'Тренд, %': stat['Тренд_%'],
                         'Периодов': stat['Количество_периодов'],
+                        'Выбросов (IQR)': stat['Количество_выбросов'],
                         'Подкатегория': stat['Подкатегория'],
                         'Категория': stat['Категория']
                     })
@@ -1113,7 +1349,18 @@ elif page == "📊 Анализ себестоимости":
                     if 'Тренд, %' in display_summary.columns:
                         display_summary['Тренд, %'] = display_summary['Тренд, %'].apply(lambda x: f"{format_float(x, 1)}%")
                     
-                    st.dataframe(display_summary, use_container_width=True, hide_index=True)
+                    # Подсвечиваем строки с выбросами
+                    st.dataframe(
+                        display_summary,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Выбросов (IQR)": st.column_config.NumberColumn(
+                                "Выбросов (IQR)",
+                                help="Количество выбросов по методу IQR",
+                            )
+                        }
+                    )
                     
                     # ===== ЭКСПОРТ =====
                     csv_summary = summary_df.copy()
