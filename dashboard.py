@@ -1224,12 +1224,28 @@ elif page == "📊 Анализ себестоимости":
                             annotation_position="top left"
                         )
                         
-                        # Выделяем выбросы на графике
+                        # Выделяем выбросы на графике (ИСПРАВЛЕНО)
                         if iqr_res['outliers']:
                             outlier_indices = iqr_res['outlier_indices']
                             outlier_values = iqr_res['outliers']
-                            outlier_periods = [periods[i] for i in outlier_indices if i < len(periods)]
-                            outlier_y = [costs[i] for i in outlier_indices if i < len(costs)]
+                            
+                            # Фильтруем индексы, которые находятся в пределах списка periods
+                            valid_indices = []
+                            valid_outliers = []
+                            for i, orig_idx in enumerate(outlier_indices):
+                                if orig_idx < len(periods):
+                                    valid_indices.append(orig_idx)
+                                    valid_outliers.append(outlier_values[i] if i < len(outlier_values) else None)
+                            
+                            # Собираем данные для отображения
+                            outlier_periods = [periods[i] for i in valid_indices if i < len(periods)]
+                            outlier_y = [costs[i] for i in valid_indices if i < len(costs)]
+                            
+                            # Также пробуем использовать значения из iqr_res['outliers']
+                            if not outlier_periods and iqr_res['outliers']:
+                                # Если не нашли по индексам, просто показываем выбросы как точки
+                                outlier_y = iqr_res['outliers'][:len(periods)]
+                                outlier_periods = periods[:len(outlier_y)]
                             
                             if outlier_periods and outlier_y:
                                 fig.add_trace(go.Scatter(
