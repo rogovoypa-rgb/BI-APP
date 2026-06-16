@@ -78,7 +78,8 @@ def load_sales_data():
     df = df.rename(columns={
         'Сумма без НДС': 'Выручка_без_НДС',
         'Контрагент': 'Контрагент',
-        'Номенклатура': 'Номенклатура'
+        'Номенклатура': 'Номенклатура',
+        'Количество': 'Количество'
     })
     
     # Добавляем столбец себестоимости для вывода (без НДС)
@@ -238,6 +239,11 @@ month_names = {
     9: 'Сентябрь', 10: 'Октябрь', 11: 'Ноябрь', 12: 'Декабрь'
 }
 
+month_names_ru = {
+    1: 'Янв', 2: 'Фев', 3: 'Мар', 4: 'Апр', 5: 'Май', 6: 'Июн',
+    7: 'Июл', 8: 'Авг', 9: 'Сен', 10: 'Окт', 11: 'Ноя', 12: 'Дек'
+}
+
 # ==========================================
 # 3. НАВИГАЦИЯ ПО СТРАНИЦАМ
 # ==========================================
@@ -272,7 +278,6 @@ if page == "📈 Продажи":
     if len(available_years_int) == 0:
         available_years_int = [2024]
     
-    # По умолчанию выбираем 2026 год, если он есть, иначе первый доступный
     default_year = 2026 if 2026 in available_years_int else available_years_int[0]
     
     st.divider()
@@ -305,12 +310,8 @@ if page == "📈 Продажи":
     
     st.divider()
     
-    # ==========================================
-    # ПОМЕСЯЧНАЯ РАЗБИВКА ПО ВСЕМ КОНТРАГЕНТАМ
-    # ==========================================
     st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year} ГОД")
     
-    # Проверяем наличие столбца себестоимости
     has_cost_column = 'Себестоимость' in df_year.columns
     
     if has_cost_column:
@@ -406,486 +407,6 @@ if page == "📈 Продажи":
     
     st.divider()
     
-    # ==========================================
-    # ПОМЕСЯЧНАЯ РАЗБИВКА ПО КЛЮЧЕВЫМ КОНТРАГЕНТАМ
-    # ==========================================
-    st.subheader(f"📊 ПОМЕСЯЧНАЯ РАЗБИВКА ПО КЛЮЧЕВЫМ КОНТРАГЕНТАМ ЗА {selected_year} ГОД")
-    
-    # Список ключевых контрагентов в нужном порядке
-    key_customers = [
-        "Умный Ритейл ООО",
-        "Вкусвилл АО",
-        "Тест продажи ООО",
-        "Городской супермаркет ООО"
-    ]
-    
-    # Добавляем CSS для отступов
-    st.markdown("""
-    <style>
-    .nomenclature-detail {
-        margin-left: 30px;
-    }
-    .nomenclature-detail .stExpander {
-        margin-left: 30px;
-    }
-    .subgroup-table {
-        margin-left: 15px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Функция для отображения помесячной разбивки для одного контрагента
-    def display_customer_monthly(customer_name):
-        df_customer = df_year[df_year['Контрагент'] == customer_name]
-        
-        if df_customer.empty:
-            st.info(f"Нет данных для контрагента {customer_name}")
-            return
-        
-        # Агрегируем по месяцам
-        if has_cost_column:
-            customer_monthly = df_customer.groupby('Период.Месяц').agg({
-                'Выручка_без_НДС': 'sum',
-                'Валовая_прибыль': 'sum',
-                'Количество': 'sum',
-                'Себестоимость': 'sum'
-            }).reset_index()
-            customer_monthly['Себестоимость'] = customer_monthly['Себестоимость'].fillna(0)
-        else:
-            customer_monthly = df_customer.groupby('Период.Месяц').agg({
-                'Выручка_без_НДС': 'sum',
-                'Валовая_прибыль': 'sum',
-                'Количество': 'sum'
-            }).reset_index()
-            customer_monthly['Себестоимость'] = 0
-        
-        customer_monthly['Название'] = customer_monthly['Период.Месяц'].map(month_names)
-        customer_monthly['Рентабельность'] = (customer_monthly['Валовая_прибыль'] / customer_monthly['Выручка_без_НДС'] * 100).fillna(0)
-        customer_monthly = customer_monthly.sort_values('Период.Месяц')
-        
-        # Рассчитываем среднеквадратическое отклонение для рентабельности
-        margin_values = customer_monthly['Рентабельность'].values
-        if len(margin_values) > 1:
-            std_dev = np.std(margin_values)
-            std_dev_formatted = format_float(std_dev, 2)
-        else:
-            std_dev_formatted = "0,00"
-        
-        # Заголовок с контрагентом
-        st.markdown(f"""
-        <div style='
-            background-color: #2E86AB;
-            border-radius: 10px;
-            padding: 12px;
-            margin-top: 15px;
-            margin-bottom: 10px;
-        '>
-            <div style='
-                font-size: 20px;
-                font-weight: bold;
-                color: white;
-                text-align: center;
-            '>🏢 {customer_name}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        # Выводим метрики
-        cust_revenue = customer_monthly['Выручка_без_НДС'].sum()
-        cust_profit = customer_monthly['Валовая_прибыль'].sum()
-        cust_margin = (cust_profit / cust_revenue * 100) if cust_revenue > 0 else 0
-        cust_quantity = customer_monthly['Количество'].sum()
-        cust_cost = customer_monthly['Себестоимость'].sum()
-        
-        cols_metrics = st.columns(7)
-        with cols_metrics[0]:
-            st.metric("💰 Выручка", f"{format_number(cust_revenue)} ₽")
-        with cols_metrics[1]:
-            st.metric("📈 Прибыль", f"{format_number(cust_profit)} ₽")
-        with cols_metrics[2]:
-            st.metric("📦 Себестоимость", f"{format_number(cust_cost)} ₽")
-        with cols_metrics[3]:
-            st.metric("🎯 Рентабельность", f"{format_float(cust_margin, 1)}%")
-        with cols_metrics[4]:
-            st.metric("📦 Продано (шт)", f"{format_number(cust_quantity)}")
-        with cols_metrics[5]:
-            st.metric("📊 Стд. отклонение", std_dev_formatted)
-        
-        # Заголовки таблицы
-        col_headers = st.columns([1.5, 1, 1, 1, 1, 1])
-        with col_headers[0]:
-            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB;'>Месяц</div>", unsafe_allow_html=True)
-        with col_headers[1]:
-            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Выручка</div>", unsafe_allow_html=True)
-        with col_headers[2]:
-            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Прибыль</div>", unsafe_allow_html=True)
-        with col_headers[3]:
-            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Себестоимость</div>", unsafe_allow_html=True)
-        with col_headers[4]:
-            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Рентабельность</div>", unsafe_allow_html=True)
-        with col_headers[5]:
-            st.markdown("<div style='font-weight: bold; font-size: 14px; color: #2E86AB; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
-        
-        # Разделительная линия под заголовками
-        st.markdown("<hr style='margin: 5px 0px; border: 1px solid #2E86AB;'>", unsafe_allow_html=True)
-        
-        # Помесячные данные
-        for _, row in customer_monthly.iterrows():
-            cols = st.columns([1.5, 1, 1, 1, 1, 1])
-            with cols[0]:
-                st.markdown(f"<div style='font-size: 14px; padding-top: 4px;'>{row['Название']}</div>", unsafe_allow_html=True)
-            with cols[1]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
-            with cols[2]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
-            with cols[3]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
-            with cols[4]:
-                margin_val = row['Рентабельность']
-                if margin_val < 0:
-                    st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px; color: #D9534F; font-weight: bold;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
-            with cols[5]:
-                st.markdown(f"<div style='font-size: 14px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
-        
-        # Детализация по подгруппам (свернутая по умолчанию)
-        with st.expander(f"📋 Детализация по {customer_name} в разрезе Подгрупп", expanded=False):
-            # Находим столбец 'Подгруппа'
-            subgroup_col = None
-            for col in df_customer.columns:
-                if 'подгрупп' in str(col).lower():
-                    subgroup_col = col
-                    break
-            
-            if subgroup_col is None:
-                st.warning("Столбец 'Подгруппа' не найден в данных")
-            else:
-                # Агрегируем по подгруппам и месяцам
-                if has_cost_column:
-                    subgroup_data = df_customer.groupby([subgroup_col, 'Период.Месяц']).agg({
-                        'Выручка_без_НДС': 'sum',
-                        'Валовая_прибыль': 'sum',
-                        'Количество': 'sum',
-                        'Себестоимость': 'sum'
-                    }).reset_index()
-                    subgroup_data['Себестоимость'] = subgroup_data['Себестоимость'].fillna(0)
-                else:
-                    subgroup_data = df_customer.groupby([subgroup_col, 'Период.Месяц']).agg({
-                        'Выручка_без_НДС': 'sum',
-                        'Валовая_прибыль': 'sum',
-                        'Количество': 'sum'
-                    }).reset_index()
-                    subgroup_data['Себестоимость'] = 0
-                
-                subgroup_data['Название'] = subgroup_data['Период.Месяц'].map(month_names)
-                subgroup_data['Рентабельность'] = (subgroup_data['Валовая_прибыль'] / subgroup_data['Выручка_без_НДС'] * 100).fillna(0)
-                subgroup_data = subgroup_data.sort_values(['Период.Месяц', subgroup_col])
-                
-                # Получаем список уникальных подгрупп
-                unique_subgroups = subgroup_data[subgroup_col].unique()
-                
-                # Для каждой подгруппы создаем отдельную таблицу
-                for subgroup in unique_subgroups:
-                    subgroup_filtered = subgroup_data[subgroup_data[subgroup_col] == subgroup].copy()
-                    subgroup_filtered = subgroup_filtered.sort_values('Период.Месяц')
-                    
-                    # Рассчитываем стандартное отклонение для подгруппы
-                    sub_margin_values = subgroup_filtered['Рентабельность'].values
-                    if len(sub_margin_values) > 1:
-                        sub_std_dev = np.std(sub_margin_values)
-                        sub_std_dev_formatted = format_float(sub_std_dev, 2)
-                    else:
-                        sub_std_dev_formatted = "0,00"
-                    
-                    # Заголовок подгруппы
-                    st.markdown(f"""
-                    <div style='
-                        background-color: #E8F4F8;
-                        border-radius: 8px;
-                        padding: 8px;
-                        margin-top: 15px;
-                        margin-bottom: 10px;
-                    '>
-                        <div style='
-                            font-size: 16px;
-                            font-weight: bold;
-                            color: #2E86AB;
-                            text-align: center;
-                        '>📁 {subgroup}</div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Заголовки таблицы для подгруппы
-                    col_headers_sub = st.columns([1.2, 1, 1, 1, 1, 1])
-                    with col_headers_sub[0]:
-                        st.markdown("<div style='font-weight: bold; font-size: 13px; color: #2E86AB;'>Месяц</div>", unsafe_allow_html=True)
-                    with col_headers_sub[1]:
-                        st.markdown("<div style='font-weight: bold; font-size: 13px; color: #2E86AB; text-align: right;'>Выручка</div>", unsafe_allow_html=True)
-                    with col_headers_sub[2]:
-                        st.markdown("<div style='font-weight: bold; font-size: 13px; color: #2E86AB; text-align: right;'>Прибыль</div>", unsafe_allow_html=True)
-                    with col_headers_sub[3]:
-                        st.markdown("<div style='font-weight: bold; font-size: 13px; color: #2E86AB; text-align: right;'>Себестоимость</div>", unsafe_allow_html=True)
-                    with col_headers_sub[4]:
-                        st.markdown("<div style='font-weight: bold; font-size: 13px; color: #2E86AB; text-align: right;'>Рентабельность</div>", unsafe_allow_html=True)
-                    with col_headers_sub[5]:
-                        st.markdown("<div style='font-weight: bold; font-size: 13px; color: #2E86AB; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
-                    
-                    st.markdown("<hr style='margin: 5px 0px; border: 0.5px solid #2E86AB;'>", unsafe_allow_html=True)
-                    
-                    # Данные по подгруппе
-                    for _, row in subgroup_filtered.iterrows():
-                        cols = st.columns([1.2, 1, 1, 1, 1, 1])
-                        with cols[0]:
-                            st.markdown(f"<div style='font-size: 12px; padding-top: 4px;'>{row['Название']}</div>", unsafe_allow_html=True)
-                        with cols[1]:
-                            st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
-                        with cols[2]:
-                            st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
-                        with cols[3]:
-                            st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
-                        with cols[4]:
-                            margin_val = row['Рентабельность']
-                            if margin_val < 0:
-                                st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px; color: #D9534F; font-weight: bold;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
-                            else:
-                                st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
-                        with cols[5]:
-                            st.markdown(f"<div style='font-size: 12px; text-align: right; padding-top: 4px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
-                    
-                    # ИТОГО по подгруппе
-                    subgroup_total_rev = subgroup_filtered['Выручка_без_НДС'].sum()
-                    subgroup_total_profit = subgroup_filtered['Валовая_прибыль'].sum()
-                    subgroup_total_cost = subgroup_filtered['Себестоимость'].sum()
-                    subgroup_total_qty = subgroup_filtered['Количество'].sum()
-                    subgroup_margin = (subgroup_total_profit / subgroup_total_rev * 100) if subgroup_total_rev > 0 else 0
-                    
-                    cols_total = st.columns([1.2, 1, 1, 1, 1, 1])
-                    with cols_total[0]:
-                        st.markdown("<div style='font-weight: bold; font-size: 12px; padding-top: 8px;'>ИТОГО:</div>", unsafe_allow_html=True)
-                    with cols_total[1]:
-                        st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_rev)} ₽</div>", unsafe_allow_html=True)
-                    with cols_total[2]:
-                        st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_profit)} ₽</div>", unsafe_allow_html=True)
-                    with cols_total[3]:
-                        st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_cost)} ₽</div>", unsafe_allow_html=True)
-                    with cols_total[4]:
-                        margin_color = "#D9534F" if subgroup_margin < 0 else "#333"
-                        st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px; color: {margin_color};'>{format_float(subgroup_margin, 1)}%</div>", unsafe_allow_html=True)
-                    with cols_total[5]:
-                        st.markdown(f"<div style='font-weight: bold; font-size: 12px; text-align: right; padding-top: 8px;'>{format_number(subgroup_total_qty)}</div>", unsafe_allow_html=True)
-                    
-                    # Стандартное отклонение для подгруппы
-                    st.markdown(f"""
-                    <div style='
-                        background-color: #F9F9F9;
-                        border-radius: 5px;
-                        padding: 5px;
-                        margin-top: 5px;
-                        margin-bottom: 15px;
-                        text-align: right;
-                    '>
-                        <span style='font-size: 11px; color: #666;'>Стандартное отклонение рентабельности: </span>
-                        <span style='font-size: 12px; font-weight: bold; color: #2E86AB;'>{sub_std_dev_formatted}%</span>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    # Кнопка для детализации по номенклатурам с отступом
-                    st.markdown('<div class="nomenclature-detail">', unsafe_allow_html=True)
-                    
-                    with st.container():
-                        st.markdown("""
-                        <style>
-                        div.stButton > button:has(.secondary-btn) {
-                            background-color: #F0F2F6;
-                            color: #2E86AB;
-                            border: 1px solid #2E86AB;
-                            border-radius: 15px;
-                            padding: 4px 12px;
-                            font-size: 12px;
-                            font-weight: normal;
-                            margin-top: 5px;
-                            margin-bottom: 5px;
-                        }
-                        div.stButton > button:has(.secondary-btn):hover {
-                            background-color: #E8F4F8;
-                            border-color: #1A5276;
-                            color: #1A5276;
-                        }
-                        </style>
-                        """, unsafe_allow_html=True)
-                        
-                        if st.button(f"🔍 Анализ номенклатур в подгруппе {subgroup}", key=f"btn_nomen_{customer_name}_{subgroup}"):
-                            # Получаем данные по номенклатурам в этой подгруппе
-                            df_subgroup_nomen = df_customer[df_customer[subgroup_col] == subgroup].copy()
-                            
-                            if df_subgroup_nomen.empty:
-                                st.warning(f"Нет данных по номенклатурам в подгруппе {subgroup}")
-                            else:
-                                # Агрегируем по номенклатурам и месяцам
-                                if has_cost_column:
-                                    nomen_data = df_subgroup_nomen.groupby(['Номенклатура', 'Период.Месяц']).agg({
-                                        'Выручка_без_НДС': 'sum',
-                                        'Валовая_прибыль': 'sum',
-                                        'Количество': 'sum',
-                                        'Себестоимость': 'sum'
-                                    }).reset_index()
-                                    nomen_data['Себестоимость'] = nomen_data['Себестоимость'].fillna(0)
-                                else:
-                                    nomen_data = df_subgroup_nomen.groupby(['Номенклатура', 'Период.Месяц']).agg({
-                                        'Выручка_без_НДС': 'sum',
-                                        'Валовая_прибыль': 'sum',
-                                        'Количество': 'sum'
-                                    }).reset_index()
-                                    nomen_data['Себестоимость'] = 0
-                                
-                                nomen_data['Название'] = nomen_data['Период.Месяц'].map(month_names)
-                                nomen_data['Рентабельность'] = (nomen_data['Валовая_прибыль'] / nomen_data['Выручка_без_НДС'] * 100).fillna(0)
-                                nomen_data = nomen_data.sort_values(['Период.Месяц', 'Номенклатура'])
-                                
-                                # Получаем список уникальных номенклатур
-                                unique_nomenclatures = nomen_data['Номенклатура'].unique()
-                                
-                                # Заголовок для popup (используем expander с более светлым фоном и отступом)
-                                with st.expander(f"📋 Детализация по номенклатурам в подгруппе {subgroup}", expanded=True):
-                                    st.markdown(f"""
-                                    <div style='
-                                        background-color: #F9F9F9;
-                                        border-radius: 8px;
-                                        padding: 6px;
-                                        margin-bottom: 12px;
-                                        border-left: 3px solid #2E86AB;
-                                        margin-left: 20px;
-                                    '>
-                                        <div style='
-                                            font-size: 13px;
-                                            font-weight: normal;
-                                            color: #555;
-                                            text-align: left;
-                                        '>📊 Анализ по номенклатурам</div>
-                                    </div>
-                                    """, unsafe_allow_html=True)
-                                    
-                                    # Для каждой номенклатуры создаем отдельную таблицу с отступом
-                                    for nomen in unique_nomenclatures:
-                                        nomen_filtered = nomen_data[nomen_data['Номенклатура'] == nomen].copy()
-                                        nomen_filtered = nomen_filtered.sort_values('Период.Месяц')
-                                        
-                                        # Рассчитываем стандартное отклонение для номенклатуры
-                                        nomen_margin_values = nomen_filtered['Рентабельность'].values
-                                        if len(nomen_margin_values) > 1:
-                                            nomen_std_dev = np.std(nomen_margin_values)
-                                            nomen_std_dev_formatted = format_float(nomen_std_dev, 2)
-                                        else:
-                                            nomen_std_dev_formatted = "0,00"
-                                        
-                                        # Заголовок номенклатуры (менее заметный, с отступом)
-                                        st.markdown(f"""
-                                        <div style='
-                                            background-color: #F5F5F5;
-                                            border-radius: 5px;
-                                            padding: 5px;
-                                            margin-top: 10px;
-                                            margin-bottom: 6px;
-                                            margin-left: 20px;
-                                        '>
-                                            <div style='
-                                                font-size: 12px;
-                                                font-weight: normal;
-                                                color: #2E86AB;
-                                                text-align: left;
-                                            '>📦 {nomen}</div>
-                                        </div>
-                                        """, unsafe_allow_html=True)
-                                        
-                                        # Заголовки таблицы для номенклатуры
-                                        col_headers_nomen = st.columns([1.2, 1, 1, 1, 1, 1])
-                                        with col_headers_nomen[0]:
-                                            st.markdown("<div style='font-weight: bold; font-size: 11px; color: #888; margin-left: 20px;'>Месяц</div>", unsafe_allow_html=True)
-                                        with col_headers_nomen[1]:
-                                            st.markdown("<div style='font-weight: bold; font-size: 11px; color: #888; text-align: right;'>Выручка</div>", unsafe_allow_html=True)
-                                        with col_headers_nomen[2]:
-                                            st.markdown("<div style='font-weight: bold; font-size: 11px; color: #888; text-align: right;'>Прибыль</div>", unsafe_allow_html=True)
-                                        with col_headers_nomen[3]:
-                                            st.markdown("<div style='font-weight: bold; font-size: 11px; color: #888; text-align: right;'>Себестоимость</div>", unsafe_allow_html=True)
-                                        with col_headers_nomen[4]:
-                                            st.markdown("<div style='font-weight: bold; font-size: 11px; color: #888; text-align: right;'>Рентабельность</div>", unsafe_allow_html=True)
-                                        with col_headers_nomen[5]:
-                                            st.markdown("<div style='font-weight: bold; font-size: 11px; color: #888; text-align: right;'>Кол-во (шт)</div>", unsafe_allow_html=True)
-                                        
-                                        st.markdown("<hr style='margin: 4px 0px; border: 0.5px solid #DDD; margin-left: 20px;'>", unsafe_allow_html=True)
-                                        
-                                        # Данные по номенклатуре
-                                        for _, row in nomen_filtered.iterrows():
-                                            cols = st.columns([1.2, 1, 1, 1, 1, 1])
-                                            with cols[0]:
-                                                st.markdown(f"<div style='font-size: 11px; padding-top: 3px; color: #555; margin-left: 20px;'>{row['Название']}</div>", unsafe_allow_html=True)
-                                            with cols[1]:
-                                                st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 3px;'>{format_number(row['Выручка_без_НДС'])} ₽</div>", unsafe_allow_html=True)
-                                            with cols[2]:
-                                                st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 3px;'>{format_number(row['Валовая_прибыль'])} ₽</div>", unsafe_allow_html=True)
-                                            with cols[3]:
-                                                st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 3px;'>{format_number(row['Себестоимость'])} ₽</div>", unsafe_allow_html=True)
-                                            with cols[4]:
-                                                margin_val = row['Рентабельность']
-                                                if margin_val < 0:
-                                                    st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 3px; color: #D9534F; font-weight: bold;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
-                                                else:
-                                                    st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 3px;'>{format_float(margin_val, 1)}%</div>", unsafe_allow_html=True)
-                                            with cols[5]:
-                                                st.markdown(f"<div style='font-size: 11px; text-align: right; padding-top: 3px;'>{format_number(row['Количество'])}</div>", unsafe_allow_html=True)
-                                        
-                                        # ИТОГО по номенклатуре (менее заметное)
-                                        nomen_total_rev = nomen_filtered['Выручка_без_НДС'].sum()
-                                        nomen_total_profit = nomen_filtered['Валовая_прибыль'].sum()
-                                        nomen_total_cost = nomen_filtered['Себестоимость'].sum()
-                                        nomen_total_qty = nomen_filtered['Количество'].sum()
-                                        nomen_margin = (nomen_total_profit / nomen_total_rev * 100) if nomen_total_rev > 0 else 0
-                                        
-                                        cols_total_nomen = st.columns([1.2, 1, 1, 1, 1, 1])
-                                        with cols_total_nomen[0]:
-                                            st.markdown("<div style='font-weight: normal; font-size: 10px; padding-top: 5px; color: #888; margin-left: 20px;'>ИТОГО:</div>", unsafe_allow_html=True)
-                                        with cols_total_nomen[1]:
-                                            st.markdown(f"<div style='font-weight: normal; font-size: 10px; text-align: right; padding-top: 5px;'>{format_number(nomen_total_rev)} ₽</div>", unsafe_allow_html=True)
-                                        with cols_total_nomen[2]:
-                                            st.markdown(f"<div style='font-weight: normal; font-size: 10px; text-align: right; padding-top: 5px;'>{format_number(nomen_total_profit)} ₽</div>", unsafe_allow_html=True)
-                                        with cols_total_nomen[3]:
-                                            st.markdown(f"<div style='font-weight: normal; font-size: 10px; text-align: right; padding-top: 5px;'>{format_number(nomen_total_cost)} ₽</div>", unsafe_allow_html=True)
-                                        with cols_total_nomen[4]:
-                                            margin_color = "#D9534F" if nomen_margin < 0 else "#888"
-                                            st.markdown(f"<div style='font-weight: normal; font-size: 10px; text-align: right; padding-top: 5px; color: {margin_color};'>{format_float(nomen_margin, 1)}%</div>", unsafe_allow_html=True)
-                                        with cols_total_nomen[5]:
-                                            st.markdown(f"<div style='font-weight: normal; font-size: 10px; text-align: right; padding-top: 5px;'>{format_number(nomen_total_qty)}</div>", unsafe_allow_html=True)
-                                        
-                                        # Стандартное отклонение для номенклатуры
-                                        st.markdown(f"""
-                                        <div style='
-                                            background-color: #FAFAFA;
-                                            border-radius: 3px;
-                                            padding: 3px;
-                                            margin-top: 3px;
-                                            margin-bottom: 8px;
-                                            text-align: right;
-                                            margin-left: 20px;
-                                        '>
-                                            <span style='font-size: 9px; color: #999;'>Стд. отклонение: </span>
-                                            <span style='font-size: 10px; font-weight: normal; color: #2E86AB;'>{nomen_std_dev_formatted}%</span>
-                                        </div>
-                                        """, unsafe_allow_html=True)
-                    
-                    st.markdown('</div>', unsafe_allow_html=True)
-        
-        # Небольшой отступ между контрагентами
-        st.markdown("<div style='margin-top: 10px;'></div>", unsafe_allow_html=True)
-    
-    # Выводим данные по каждому контрагенту
-    for customer in key_customers:
-        display_customer_monthly(customer)
-    
-    st.divider()
-    
-    # ==========================================
-    # ТОП-5 КОНТРАГЕНТОВ
-    # ==========================================
     st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ЗА {selected_year}")
     
     cust_rev = df_year.groupby('Контрагент')['Выручка_без_НДС'].sum().reset_index()
@@ -946,6 +467,15 @@ elif page == "🚚 Логистика":
     
     if logistics_df.empty:
         st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или пуст.")
+        with st.expander("📌 Требуемая структура файла"):
+            st.markdown("""
+            Файл должен содержать колонки:
+            - `Дата отгрузки` / `Дата заказа`
+            - `Итого совокупная Стоимость доставки 1 паллета без НДС`
+            - `Кол-во паллет в заказе`
+            - `Город`, `Контрагент`, `Категория`, `Подкатегория`
+            - `Стоимость товара в заказе Без НДС`
+            """)
     else:
         # ===== 1. ПРЕДОБРАБОТКА ДАННЫХ =====
         df_log = logistics_df.copy()
@@ -957,8 +487,10 @@ elif page == "🚚 Логистика":
         # ===== ДАТА (столбец K - Дата отгрузки) =====
         if 'Дата отгрузки' in df_log.columns:
             df_log['Дата'] = pd.to_datetime(df_log['Дата отгрузки'], errors='coerce')
+        elif 'Дата заказа' in df_log.columns:
+            df_log['Дата'] = pd.to_datetime(df_log['Дата заказа'], errors='coerce')
         else:
-            st.error("❌ Столбец 'Дата отгрузки' не найден!")
+            st.error("❌ Столбец с датами не найден!")
             st.stop()
         
         # Удаляем строки с некорректными датами
@@ -1255,31 +787,866 @@ elif page == "🚚 Логистика":
 # ==========================================
 elif page == "📊 Анализ себестоимости":
     st.title("📊 Анализ себестоимости продукции")
+    
+    st.markdown("""
+    ### Динамика себестоимости без НДС на единицу продукции
+    **Формула:** Себестоимость без НДС (столбец T) / Количество (столбец O)
+    """)
+    
+    # Подготовка данных
     df_cost = sales_df.copy()
+    
+    # Создаём временный столбец для сортировки дат
+    df_cost['Дата_сортировка'] = pd.to_datetime(df_cost['Дата'], errors='coerce')
+    
+    # Создаём столбец с русскими названиями месяцев
+    df_cost['Месяц_рус'] = df_cost['Дата_сортировка'].dt.month.map(month_names_ru)
+    df_cost['Год'] = df_cost['Дата_сортировка'].dt.year
+    df_cost['Период'] = df_cost['Дата_сортировка'].dt.strftime('%Y-%m')
+    df_cost['Период_рус'] = df_cost['Дата_сортировка'].dt.strftime('%Y') + ' ' + df_cost['Месяц_рус']
+    
+    # Убираем дубликаты столбцов, если они есть
+    df_cost = df_cost.loc[:, ~df_cost.columns.duplicated()]
+    
+    # Рассчитываем себестоимость на единицу продукции
     df_cost['Себестоимость_единицы'] = df_cost['Себестоимость'] / df_cost['Количество']
     df_cost['Себестоимость_единицы'] = df_cost['Себестоимость_единицы'].replace([float('inf'), -float('inf')], 0).fillna(0)
-    st.dataframe(df_cost[['Номенклатура', 'Себестоимость_единицы', 'Дата']].head(100), use_container_width=True)
+    
+    # Определяем столбец для группировки
+    group_col = None
+    possible_group_cols = ['Группа', 'Подгруппа', 'Категория', 'Группа товаров', 'Категория товара']
+    
+    for col in possible_group_cols:
+        if col in df_cost.columns:
+            group_col = col
+            break
+    
+    if group_col is None:
+        for col in df_cost.columns:
+            col_lower = str(col).lower()
+            if 'групп' in col_lower or 'категор' in col_lower:
+                group_col = col
+                break
+    
+    if group_col is None:
+        st.warning("⚠️ Не найден столбец для группировки номенклатур")
+        group_col = 'Номенклатура'
+    
+    # Получаем список уникальных групп
+    unique_groups = df_cost[group_col].dropna().unique()
+    unique_groups = sorted(unique_groups)
+    
+    if len(unique_groups) == 0:
+        st.warning("Нет данных для отображения")
+    else:
+        # ===== ВЫБОР ГРУППЫ =====
+        selected_group = st.selectbox(
+            "📂 Выберите группу номенклатур",
+            unique_groups,
+            help=f"Группировка по столбцу '{group_col}'"
+        )
+        
+        # Фильтруем номенклатуры по выбранной группе
+        df_group = df_cost[df_cost[group_col] == selected_group]
+        
+        if df_group.empty:
+            st.warning(f"Нет данных для группы '{selected_group}'")
+        else:
+            # ===== ФИЛЬТРЫ =====
+            st.divider()
+            
+            col_filter1, col_filter2 = st.columns(2)
+            
+            with col_filter1:
+                period_options = ["За всё время", "Текущий год", "Прошлый год", "Текущий и прошлый год"]
+                default_index = period_options.index("Текущий и прошлый год")
+                period_filter = st.selectbox(
+                    "📅 Период",
+                    period_options,
+                    index=default_index,
+                    help="Ограничить период отображаемых данных"
+                )
+            
+            with col_filter2:
+                sort_options = [
+                    "По убыванию средней себестоимости",
+                    "По возрастанию средней себестоимости",
+                    "По стандартному отклонению (от наибольшего)",
+                    "По стандартному отклонению (от наименьшего)",
+                    "По подкатегории",
+                    "По категории",
+                    "По группе",
+                    "По номенклатуре"
+                ]
+                default_sort_index = sort_options.index("По стандартному отклонению (от наибольшего)")
+                sort_by = st.selectbox(
+                    "📊 Сортировка графиков",
+                    sort_options,
+                    index=default_sort_index,
+                    help="Порядок вывода графиков сверху вниз"
+                )
+            
+            # ===== ПРИМЕНЯЕМ ФИЛЬТР ПО ДАТЕ =====
+            current_year = pd.Timestamp.now().year
+            available_years = sorted(df_cost['Год'].dropna().unique())
+            
+            df_cost_filtered = df_group.copy()
+            period_caption = "за всё время"
+            
+            if period_filter == "Текущий год":
+                if current_year in available_years:
+                    df_cost_filtered = df_group[df_group['Год'] == current_year]
+                    period_caption = f"за {current_year} год"
+                else:
+                    st.warning(f"Нет данных за {current_year} год. Отображаются все данные.")
+            elif period_filter == "Прошлый год":
+                prev_year = current_year - 1
+                if prev_year in available_years:
+                    df_cost_filtered = df_group[df_group['Год'] == prev_year]
+                    period_caption = f"за {prev_year} год"
+                else:
+                    st.warning(f"Нет данных за {prev_year} год. Отображаются все данные.")
+            elif period_filter == "Текущий и прошлый год":
+                prev_year = current_year - 1
+                years_to_show = [y for y in [current_year, prev_year] if y in available_years]
+                if years_to_show:
+                    df_cost_filtered = df_group[df_group['Год'].isin(years_to_show)]
+                    period_caption = f"за {', '.join(map(str, years_to_show))} годы"
+                else:
+                    st.warning("Нет данных за текущий или прошлый год. Отображаются все данные.")
+            
+            # ===== ПОЛУЧАЕМ СПИСОК НОМЕНКЛАТУР =====
+            nomenclatures = df_cost_filtered['Номенклатура'].dropna().unique()
+            
+            # ===== СОБИРАЕМ СТАТИСТИКУ =====
+            nomen_stats = []
+            for nomen in nomenclatures:
+                df_nomen = df_cost_filtered[df_cost_filtered['Номенклатура'] == nomen]
+                if not df_nomen.empty:
+                    monthly_data = df_nomen.groupby('Период')['Себестоимость_единицы'].mean()
+                    monthly_data = monthly_data.sort_index()
+                    
+                    if not monthly_data.empty:
+                        periods_sorted = monthly_data.index.tolist()
+                        periods_ru = []
+                        for p in periods_sorted:
+                            year, month = p.split('-')
+                            month_ru = month_names_ru[int(month)]
+                            periods_ru.append(f"{year} {month_ru}")
+                        
+                        avg = monthly_data.mean()
+                        std = monthly_data.std() if len(monthly_data) > 1 else 0
+                        
+                        subcat = df_nomen['Подкатегория'].iloc[0] if 'Подкатегория' in df_nomen.columns else ''
+                        category = df_nomen['Категория'].iloc[0] if 'Категория' in df_nomen.columns else ''
+                        nomen_group = df_nomen[group_col].iloc[0] if group_col in df_nomen.columns else ''
+                        
+                        # Считаем тренд (положительный/отрицательный)
+                        if len(monthly_data) >= 2:
+                            first_val = monthly_data.iloc[0]
+                            last_val = monthly_data.iloc[-1]
+                            trend = (last_val - first_val) / first_val * 100 if first_val > 0 else 0
+                        else:
+                            trend = 0
+                        
+                        nomen_stats.append({
+                            'Номенклатура': nomen,
+                            'Средняя': avg,
+                            'Стд_отклонение': std,
+                            'Подкатегория': subcat,
+                            'Категория': category,
+                            'Группа': nomen_group,
+                            'Максимум': monthly_data.max(),
+                            'Минимум': monthly_data.min(),
+                            'Последнее': monthly_data.iloc[-1] if len(monthly_data) > 0 else 0,
+                            'Первое': monthly_data.iloc[0] if len(monthly_data) > 0 else 0,
+                            'Тренд_%': trend,
+                            'Количество_периодов': len(monthly_data),
+                            'Данные': monthly_data.values.tolist(),
+                            'Периоды': periods_ru,
+                            'Периоды_сорт': periods_sorted
+                        })
+            
+            # ===== СОРТИРУЕМ =====
+            if sort_by == "По убыванию средней себестоимости":
+                nomen_stats.sort(key=lambda x: x['Средняя'], reverse=True)
+                sort_caption = "от наибольшей средней себестоимости"
+            elif sort_by == "По возрастанию средней себестоимости":
+                nomen_stats.sort(key=lambda x: x['Средняя'])
+                sort_caption = "от наименьшей средней себестоимости"
+            elif sort_by == "По стандартному отклонению (от наибольшего)":
+                nomen_stats.sort(key=lambda x: x['Стд_отклонение'], reverse=True)
+                sort_caption = "от наибольшей волатильности"
+            elif sort_by == "По стандартному отклонению (от наименьшего)":
+                nomen_stats.sort(key=lambda x: x['Стд_отклонение'])
+                sort_caption = "от наименьшей волатильности"
+            elif sort_by == "По подкатегории":
+                nomen_stats.sort(key=lambda x: x['Подкатегория'])
+                sort_caption = "по подкатегории"
+            elif sort_by == "По категории":
+                nomen_stats.sort(key=lambda x: x['Категория'])
+                sort_caption = "по категории"
+            elif sort_by == "По группе":
+                nomen_stats.sort(key=lambda x: x['Группа'])
+                sort_caption = "по группе"
+            else:
+                nomen_stats.sort(key=lambda x: x['Номенклатура'])
+                sort_caption = "по наименованию"
+            
+            # ===== ОТОБРАЖАЕМ ЗАГОЛОВОК =====
+            st.divider()
+            st.subheader(f"📦 Номенклатуры в группе: {selected_group}")
+            st.caption(f"📅 {period_caption} | 📊 Сортировка: {sort_caption} | Всего номенклатур: {len(nomen_stats)}")
+            
+            # ===== ДЛЯ КАЖДОЙ НОМЕНКЛАТУРЫ СТРОИМ ГРАФИК =====
+            for idx, stat in enumerate(nomen_stats):
+                nomen = stat['Номенклатура']
+                periods = stat['Периоды']
+                costs = stat['Данные']
+                
+                col_left, col_right = st.columns([0.3, 0.7])
+                
+                with col_left:
+                    # Определяем цвет тренда
+                    trend_color = "🟢" if stat['Тренд_%'] <= 0 else "🔴"
+                    trend_text = f"{trend_color} {format_float(stat['Тренд_%'], 1)}%"
+                    
+                    st.markdown(f"""
+                    <div style='
+                        background-color: #F0F2F6;
+                        border-radius: 10px;
+                        padding: 12px;
+                        margin-top: 30px;
+                    '>
+                        <div style='font-weight: bold; font-size: 16px; margin-bottom: 10px;'>{nomen}</div>
+                        <div style='font-size: 13px; color: #666;'>Среднее:</div>
+                        <div style='font-size: 18px; font-weight: bold; color: #2E86AB;'>{format_number(stat['Средняя'])} ₽/ед.</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 8px;'>Максимум:</div>
+                        <div style='font-size: 16px; font-weight: bold; color: #D9534F;'>{format_number(stat['Максимум'])} ₽/ед.</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 8px;'>Минимум:</div>
+                        <div style='font-size: 16px; font-weight: bold; color: #5CB85C;'>{format_number(stat['Минимум'])} ₽/ед.</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 8px;'>Тренд:</div>
+                        <div style='font-size: 16px; font-weight: bold;'>{trend_text}</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 8px;'>Стд. отклонение:</div>
+                        <div style='font-size: 14px;'>{format_number(stat['Стд_отклонение'])}</div>
+                        <div style='font-size: 13px; color: #666; margin-top: 8px;'>Периодов:</div>
+                        <div style='font-size: 14px;'>{stat['Количество_периодов']}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with col_right:
+                    fig = go.Figure()
+                    
+                    # Основная линия
+                    fig.add_trace(go.Scatter(
+                        x=periods,
+                        y=costs,
+                        mode='lines+markers',
+                        line=dict(width=2, color='#2E86AB'),
+                        marker=dict(size=8, color='#1A5276'),
+                        name='Себестоимость',
+                        hovertemplate='%{x}<br>Себестоимость: %{y:.2f} ₽/ед.<extra></extra>'
+                    ))
+                    
+                    # Средняя линия
+                    fig.add_hline(
+                        y=stat['Средняя'],
+                        line_dash="dash",
+                        line_color="red",
+                        annotation_text=f"Среднее: {format_number(stat['Средняя'])} ₽/ед.",
+                        annotation_position="top right"
+                    )
+                    
+                    # Добавляем область волатильности (среднее ± отклонение)
+                    if stat['Стд_отклонение'] > 0:
+                        fig.add_hrect(
+                            y0=stat['Средняя'] - stat['Стд_отклонение'],
+                            y1=stat['Средняя'] + stat['Стд_отклонение'],
+                            fillcolor="rgba(46, 134, 171, 0.2)",
+                            line_width=0,
+                            annotation_text="±1σ",
+                            annotation_position="bottom right"
+                        )
+                    
+                    fig.update_layout(
+                        title="",
+                        xaxis_title="Период (месяц/год)",
+                        yaxis_title="Себестоимость без НДС на единицу (₽/ед.)",
+                        hovermode='x unified',
+                        height=350,
+                        margin=dict(l=40, r=40, t=30, b=40)
+                    )
+                    
+                    fig.update_xaxes(tickangle=-45)
+                    
+                    st.plotly_chart(fig, use_container_width=True, key=f"cost_chart_{idx}_{nomen[:30]}")
+                
+                st.divider()
+            
+            # ===== СВОДНАЯ ТАБЛИЦА =====
+            if len(nomen_stats) > 0:
+                st.subheader(f"📊 Сводная таблица себестоимости единицы по номенклатурам группы '{selected_group}'")
+                st.caption(f"{period_caption}")
+                
+                summary_data = []
+                for stat in nomen_stats:
+                    summary_data.append({
+                        'Номенклатура': stat['Номенклатура'],
+                        'Средняя себестоимость ед.': stat['Средняя'],
+                        'Стд. отклонение': stat['Стд_отклонение'],
+                        'Максимум': stat['Максимум'],
+                        'Минимум': stat['Минимум'],
+                        'Последнее': stat['Последнее'],
+                        'Тренд, %': stat['Тренд_%'],
+                        'Периодов': stat['Количество_периодов'],
+                        'Подкатегория': stat['Подкатегория'],
+                        'Категория': stat['Категория']
+                    })
+                
+                summary_df = pd.DataFrame(summary_data)
+                if not summary_df.empty:
+                    display_summary = summary_df.copy()
+                    for col in ['Средняя себестоимость ед.', 'Стд. отклонение', 'Максимум', 'Минимум', 'Последнее']:
+                        if col in display_summary.columns:
+                            display_summary[col] = display_summary[col].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+                    
+                    if 'Тренд, %' in display_summary.columns:
+                        display_summary['Тренд, %'] = display_summary['Тренд, %'].apply(lambda x: f"{format_float(x, 1)}%")
+                    
+                    st.dataframe(display_summary, use_container_width=True, hide_index=True)
+                    
+                    # ===== ЭКСПОРТ =====
+                    csv_summary = summary_df.copy()
+                    for col in ['Средняя себестоимость ед.', 'Стд. отклонение', 'Максимум', 'Минимум', 'Последнее', 'Тренд, %']:
+                        if col in csv_summary.columns:
+                            csv_summary[col] = csv_summary[col].apply(lambda x: float(x) if pd.notna(x) else 0)
+                    
+                    csv_data = csv_summary.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                    st.download_button(
+                        "📥 Скачать сводную таблицу (CSV)",
+                        csv_data,
+                        f"cost_per_unit_summary_{selected_group}_{pd.Timestamp.now().strftime('%Y%m%d')}.csv",
+                        "text/csv"
+                    )
+            
+            # ===== ДОПОЛНИТЕЛЬНЫЙ АНАЛИЗ: СТАНДАРТНОЕ ОТКЛОНЕНИЕ =====
+            if len(nomen_stats) > 1:
+                st.divider()
+                st.subheader("📊 Сравнительный анализ волатильности себестоимости")
+                
+                # Группируем по категориям/подкатегориям для анализа
+                if 'Подкатегория' in df_cost_filtered.columns:
+                    category_analysis = df_cost_filtered.groupby('Подкатегория')['Себестоимость_единицы'].agg(['mean', 'std', 'min', 'max', 'count']).reset_index()
+                    category_analysis = category_analysis.rename(columns={
+                        'Подкатегория': 'Группа',
+                        'mean': 'Средняя',
+                        'std': 'Стд_отклонение',
+                        'min': 'Минимум',
+                        'max': 'Максимум',
+                        'count': 'Количество_записей'
+                    })
+                    
+                    if not category_analysis.empty:
+                        st.markdown("**Анализ по подкатегориям:**")
+                        display_cat = category_analysis.copy()
+                        for col in ['Средняя', 'Стд_отклонение', 'Минимум', 'Максимум']:
+                            display_cat[col] = display_cat[col].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+                        st.dataframe(display_cat, use_container_width=True, hide_index=True)
+                        
+                        # График сравнения средних
+                        fig_compare = go.Figure()
+                        fig_compare.add_trace(go.Bar(
+                            x=category_analysis['Группа'],
+                            y=category_analysis['Средняя'],
+                            marker_color='#2E86AB',
+                            error_y=dict(
+                                type='data',
+                                array=category_analysis['Стд_отклонение'],
+                                visible=True
+                            ),
+                            name='Средняя ± отклонение'
+                        ))
+                        fig_compare.update_layout(
+                            title='Средняя себестоимость по подкатегориям',
+                            xaxis_title='Подкатегория',
+                            yaxis_title='Себестоимость (₽/ед.)',
+                            height=400
+                        )
+                        st.plotly_chart(fig_compare, use_container_width=True)
 
 # ==========================================
 # СТРАНИЦА 4: ФОРМИРОВАНИЕ СЕБЕСТОИМОСТИ ПФ
 # ==========================================
 elif page == "🏭 Формирование себестоимости ПФ":
     st.title("🏭 Формирование себестоимости полуфабриката")
+    
     if production_df.empty:
-        st.warning("⚠️ Файл 'production_data.xlsx' не найден")
+        st.warning("⚠️ Файл 'production_data.xlsx' не найден или не удалось загрузить данные.")
+        st.info("📌 Пожалуйста, добавьте файл с данными о производстве в папку с приложением.")
     else:
+        st.markdown("### Анализ себестоимости продукта **П/Ф Дрип Гватемала Декаф 1шт.**")
+        
         batches = production_df[production_df['Тип'] == 'Партия'].copy()
-        st.dataframe(batches.head(100), use_container_width=True)
+        materials = production_df[production_df['Тип'] == 'Сырье'].copy()
+        
+        if batches.empty:
+            st.warning("Не удалось распознать партии в файле.")
+            with st.expander("🔧 Показать загруженные данные"):
+                st.write(production_df.head(20))
+        else:
+            st.success(f"✅ Загружено {len(batches)} партий и {len(materials)} записей о сырье")
+            
+            # Фильтры
+            st.divider()
+            
+            col_filter1, col_filter2 = st.columns(2)
+            
+            with col_filter1:
+                batch_options = ['Все партии'] + sorted(batches['Партия'].astype(str).unique().tolist())
+                selected_batch = st.selectbox("📦 Выберите партию для детального анализа", batch_options)
+            
+            with col_filter2:
+                sort_by = st.selectbox(
+                    "📊 Сортировка партий",
+                    ["По номеру (старые сверху)", "По номеру (новые сверху)", "По себестоимости (от низкой)", "По себестоимости (от высокой)"]
+                )
+            
+            # Общая статистика
+            st.divider()
+            st.subheader("📊 ОБЩАЯ СТАТИСТИКА")
+            
+            avg_cost = batches['Себестоимость_единицы'].mean()
+            min_cost = batches['Себестоимость_единицы'].min()
+            max_cost = batches['Себестоимость_единицы'].max()
+            total_quantity = batches['Количество_выпущено'].sum()
+            
+            c1, c2, c3, c4 = st.columns(4)
+            with c1:
+                st.metric("📦 Всего выпущено", f"{format_number(total_quantity)} шт.")
+            with c2:
+                st.metric("📋 Количество партий", len(batches))
+            with c3:
+                st.metric("💰 Средняя себестоимость", f"{format_number(avg_cost)} ₽/шт.")
+            with c4:
+                st.metric("📊 Разброс", f"{format_number(min_cost)} - {format_number(max_cost)} ₽/шт.")
+            
+            st.divider()
+            
+            # Сравнение самой дешевой и самой дорогой партии
+            if len(batches) >= 2:
+                st.subheader("💰 СРАВНЕНИЕ САМОЙ ДЕШЕВОЙ И САМОЙ ДОРОГОЙ ПАРТИИ")
+                
+                cheapest_batch = batches.loc[batches['Себестоимость_единицы'].idxmin()]
+                most_expensive_batch = batches.loc[batches['Себестоимость_единицы'].idxmax()]
+                
+                cheapest_materials = materials[materials['Партия'].astype(str) == str(cheapest_batch['Партия'])]
+                expensive_materials = materials[materials['Партия'].astype(str) == str(most_expensive_batch['Партия'])]
+                
+                col_left, col_right = st.columns(2)
+                
+                with col_left:
+                    st.markdown(f"""
+                    <div style='
+                        background-color: #D4EDDA;
+                        border-radius: 10px;
+                        padding: 15px;
+                        text-align: center;
+                        border: 1px solid #28A745;
+                    '>
+                        <div style='font-size: 18px; font-weight: bold; color: #155724;'>🟢 САМАЯ ДЕШЕВАЯ ПАРТИЯ</div>
+                        <div style='font-size: 24px; font-weight: bold; margin-top: 10px;'>{cheapest_batch['Партия']}</div>
+                        <div style='font-size: 20px; font-weight: bold; color: #28A745; margin-top: 10px;'>{format_number(cheapest_batch['Себестоимость_единицы'])} ₽/шт.</div>
+                        <div style='font-size: 14px; color: #666; margin-top: 5px;'>Выпущено: {format_number(cheapest_batch['Количество_выпущено'])} шт.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if not cheapest_materials.empty:
+                        st.markdown("**Состав сырья:**")
+                        cheapest_display = cheapest_materials[['Сырье', 'Себестоимость_на_единицу_продукции']].copy()
+                        cheapest_display['Доля_в_себестоимости'] = cheapest_display['Себестоимость_на_единицу_продукции'] / cheapest_batch['Себестоимость_единицы'] * 100
+                        cheapest_display = cheapest_display.sort_values('Себестоимость_на_единицу_продукции', ascending=False)
+                        for _, row in cheapest_display.iterrows():
+                            st.write(f"• {row['Сырье']}: {format_number(row['Себестоимость_на_единицу_продукции'])} ₽/шт. ({format_float(row['Доля_в_себестоимости'], 1)}%)")
+                
+                with col_right:
+                    st.markdown(f"""
+                    <div style='
+                        background-color: #F8D7DA;
+                        border-radius: 10px;
+                        padding: 15px;
+                        text-align: center;
+                        border: 1px solid #DC3545;
+                    '>
+                        <div style='font-size: 18px; font-weight: bold; color: #721C24;'>🔴 САМАЯ ДОРОГАЯ ПАРТИЯ</div>
+                        <div style='font-size: 24px; font-weight: bold; margin-top: 10px;'>{most_expensive_batch['Партия']}</div>
+                        <div style='font-size: 20px; font-weight: bold; color: #DC3545; margin-top: 10px;'>{format_number(most_expensive_batch['Себестоимость_единицы'])} ₽/шт.</div>
+                        <div style='font-size: 14px; color: #666; margin-top: 5px;'>Выпущено: {format_number(most_expensive_batch['Количество_выпущено'])} шт.</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if not expensive_materials.empty:
+                        st.markdown("**Состав сырья:**")
+                        expensive_display = expensive_materials[['Сырье', 'Себестоимость_на_единицу_продукции']].copy()
+                        expensive_display['Доля_в_себестоимости'] = expensive_display['Себестоимость_на_единицу_продукции'] / most_expensive_batch['Себестоимость_единицы'] * 100
+                        expensive_display = expensive_display.sort_values('Себестоимость_на_единицу_продукции', ascending=False)
+                        for _, row in expensive_display.iterrows():
+                            st.write(f"• {row['Сырье']}: {format_number(row['Себестоимость_на_единицу_продукции'])} ₽/шт. ({format_float(row['Доля_в_себестоимости'], 1)}%)")
+                
+                diff_cost = most_expensive_batch['Себестоимость_единицы'] - cheapest_batch['Себестоимость_единицы']
+                diff_percent = (diff_cost / cheapest_batch['Себестоимость_единицы'] * 100)
+                
+                st.markdown(f"""
+                <div style='
+                    background-color: #E2E3E5;
+                    border-radius: 10px;
+                    padding: 10px;
+                    text-align: center;
+                    margin-top: 10px;
+                '>
+                    <span style='font-size: 16px;'>📊 Разница между самой дорогой и самой дешевой партией:</span>
+                    <span style='font-size: 20px; font-weight: bold; color: #DC3545;'>{format_number(diff_cost)} ₽/шт.</span>
+                    <span style='font-size: 16px;'>({format_float(diff_percent, 1)}% дороже)</span>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                st.divider()
+            
+            # График динамики себестоимости по партиям
+            st.subheader("📈 ДИНАМИКА СЕБЕСТОИМОСТИ ПО ПАРТИЯМ")
+            
+            batches_sorted = batches.copy()
+            batches_sorted['Партия_стр'] = batches_sorted['Партия'].astype(str)
+            
+            if sort_by == "По номеру (старые сверху)":
+                batches_sorted = batches_sorted.sort_values('Партия_стр', ascending=True)
+            elif sort_by == "По номеру (новые сверху)":
+                batches_sorted = batches_sorted.sort_values('Партия_стр', ascending=False)
+            elif sort_by == "По себестоимости (от низкой)":
+                batches_sorted = batches_sorted.sort_values('Себестоимость_единицы', ascending=True)
+            elif sort_by == "По себестоимости (от высокой)":
+                batches_sorted = batches_sorted.sort_values('Себестоимость_единицы', ascending=False)
+            
+            fig_cost = go.Figure()
+            fig_cost.add_trace(go.Scatter(
+                x=batches_sorted['Партия_стр'],
+                y=batches_sorted['Себестоимость_единицы'],
+                mode='lines+markers',
+                name='Себестоимость единицы',
+                line=dict(color='#2E86AB', width=2),
+                marker=dict(size=8, color='#1A5276')
+            ))
+            
+            fig_cost.add_hline(
+                y=avg_cost,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Среднее: {format_number(avg_cost)} ₽/шт.",
+                annotation_position="top right"
+            )
+            
+            fig_cost.update_layout(
+                title="Динамика себестоимости единицы продукции по партиям",
+                xaxis_title="Партия",
+                yaxis_title="Себестоимость (₽/шт.)",
+                hovermode='x unified',
+                height=450,
+                xaxis_tickangle=-45
+            )
+            
+            st.plotly_chart(fig_cost, use_container_width=True)
+            
+            st.divider()
+            
+            # Детальный анализ выбранной партии
+            st.subheader("🔍 ДЕТАЛЬНЫЙ СОСТАВ СЕБЕСТОИМОСТИ")
+            
+            if selected_batch == 'Все партии':
+                st.write("### 📋 Все партии")
+                display_batches = batches[['Партия', 'Количество_выпущено', 'Себестоимость_единицы']].copy()
+                display_batches['Партия'] = display_batches['Партия'].astype(str)
+                display_batches['Себестоимость_единицы'] = display_batches['Себестоимость_единицы'].apply(lambda x: f"{format_number(x)} ₽")
+                display_batches['Количество_выпущено'] = display_batches['Количество_выпущено'].apply(format_number)
+                st.dataframe(display_batches, use_container_width=True, hide_index=True)
+                
+                st.subheader("📊 Распределение себестоимости по партиям")
+                fig_hist = px.histogram(batches, x='Себестоимость_единицы', nbins=20,
+                                         title='Гистограмма распределения себестоимости',
+                                         labels={'Себестоимость_единицы': 'Себестоимость (₽/шт.)'})
+                st.plotly_chart(fig_hist, use_container_width=True)
+                
+            else:
+                batch_info = batches[batches['Партия'].astype(str) == selected_batch]
+                if batch_info.empty:
+                    st.warning(f"Партия {selected_batch} не найдена")
+                else:
+                    batch_info = batch_info.iloc[0]
+                    batch_materials = materials[materials['Партия'].astype(str) == selected_batch]
+                    
+                    st.write(f"### 📦 Партия: {selected_batch}")
+                    
+                    col_info1, col_info2, col_info3 = st.columns(3)
+                    with col_info1:
+                        st.metric("📦 Выпущено", f"{format_number(batch_info['Количество_выпущено'])} шт.")
+                    with col_info2:
+                        st.metric("💰 Себестоимость единицы", f"{format_number(batch_info['Себестоимость_единицы'])} ₽/шт.")
+                    with col_info3:
+                        total_cost = batch_info['Себестоимость_единицы'] * batch_info['Количество_выпущено']
+                        st.metric("💵 Общая себестоимость партии", f"{format_number(total_cost)} ₽")
+                    
+                    st.divider()
+                    
+                    if not batch_materials.empty:
+                        st.write("### 📋 Состав себестоимости партии")
+                        
+                        batch_materials['Доля_в_себестоимости'] = batch_materials['Себестоимость_на_единицу_продукции'] / batch_info['Себестоимость_единицы'] * 100
+                        
+                        display_materials = batch_materials[['Сырье', 'Количество_сырья', 'Цена_сырья', 'Себестоимость_на_единицу_продукции', 'Доля_в_себестоимости']].copy()
+                        display_materials['Цена_сырья'] = display_materials['Цена_сырья'].apply(lambda x: f"{format_number(x)} ₽")
+                        display_materials['Количество_сырья'] = display_materials['Количество_сырья'].apply(format_number)
+                        display_materials['Себестоимость_на_единицу_продукции'] = display_materials['Себестоимость_на_единицу_продукции'].apply(lambda x: f"{format_number(x)} ₽")
+                        display_materials['Доля_в_себестоимости'] = display_materials['Доля_в_себестоимости'].apply(lambda x: f"{format_float(x, 1)}%")
+                        
+                        st.dataframe(display_materials, use_container_width=True, hide_index=True)
+                        
+                        st.subheader("🥧 Структура себестоимости")
+                        fig_pie = px.pie(batch_materials, values='Себестоимость_на_единицу_продукции', names='Сырье',
+                                         title=f'Распределение затрат в партии {selected_batch}',
+                                         labels={'Себестоимость_на_единицу_продукции': 'Затраты (₽/шт.)'})
+                        st.plotly_chart(fig_pie, use_container_width=True)
+                        
+                        st.subheader("📊 Анализ сырья")
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            fig_bar = px.bar(batch_materials, x='Сырье', y='Цена_сырья',
+                                             title='Цена сырья',
+                                             labels={'Цена_сырья': 'Цена (₽)', 'Сырье': ''})
+                            fig_bar.update_layout(xaxis_tickangle=-45)
+                            st.plotly_chart(fig_bar, use_container_width=True)
+                        
+                        with col2:
+                            fig_qty = px.bar(batch_materials, x='Сырье', y='Количество_сырья',
+                                             title='Количество использованного сырья',
+                                             labels={'Количество_сырья': 'Количество', 'Сырье': ''})
+                            fig_qty.update_layout(xaxis_tickangle=-45)
+                            st.plotly_chart(fig_qty, use_container_width=True)
+                        
+                    else:
+                        st.info("Нет данных о составе сырья для этой партии")
+        
+        st.divider()
+        
+        # Сравнение партий
+        if 'batches' in locals() and not batches.empty and len(batches) >= 2:
+            st.subheader("🔄 СРАВНЕНИЕ ПАРТИЙ")
+            
+            col_comp1, col_comp2 = st.columns(2)
+            
+            batch_list = sorted(batches['Партия'].astype(str).unique().tolist())
+            
+            with col_comp1:
+                batch1 = st.selectbox("Выберите первую партию", batch_list, key="comp_batch1")
+            
+            with col_comp2:
+                batch2 = st.selectbox("Выберите вторую партию", batch_list, key="comp_batch2")
+            
+            if batch1 and batch2 and batch1 != batch2:
+                batch1_info = batches[batches['Партия'].astype(str) == batch1].iloc[0]
+                batch2_info = batches[batches['Партия'].astype(str) == batch2].iloc[0]
+                
+                materials1 = materials[materials['Партия'].astype(str) == batch1] if 'materials' in locals() else pd.DataFrame()
+                materials2 = materials[materials['Партия'].astype(str) == batch2] if 'materials' in locals() else pd.DataFrame()
+                
+                st.write(f"### Сравнение партий: {batch1} vs {batch2}")
+                
+                c1, c2, c3, c4 = st.columns(4)
+                with c1:
+                    diff_cost = batch2_info['Себестоимость_единицы'] - batch1_info['Себестоимость_единицы']
+                    st.metric("Разница в себестоимости", f"{format_number(diff_cost)} ₽/шт.",
+                             delta=f"{format_float(diff_cost / batch1_info['Себестоимость_единицы'] * 100, 1)}%")
+                with c2:
+                    diff_qty = batch2_info['Количество_выпущено'] - batch1_info['Количество_выпущено']
+                    st.metric("Разница в выпуске", f"{format_number(diff_qty)} шт.")
+                
+                if not materials1.empty and not materials2.empty:
+                    st.write("### Сравнение состава сырья")
+                    
+                    comparison = materials1[['Сырье', 'Себестоимость_на_единицу_продукции']].merge(
+                        materials2[['Сырье', 'Себестоимость_на_единицу_продукции']],
+                        on='Сырье',
+                        how='outer',
+                        suffixes=('_1', '_2')
+                    ).fillna(0)
+                    
+                    comparison['Разница'] = comparison['Себестоимость_на_единицу_продукции_2'] - comparison['Себестоимость_на_единицу_продукции_1']
+                    
+                    display_comp = comparison.copy()
+                    for col in ['Себестоимость_на_единицу_продукции_1', 'Себестоимость_на_единицу_продукции_2', 'Разница']:
+                        display_comp[col] = display_comp[col].apply(lambda x: f"{format_number(x)} ₽")
+                    
+                    st.dataframe(display_comp, use_container_width=True, hide_index=True)
+                    
+                    fig_comp = go.Figure()
+                    fig_comp.add_trace(go.Bar(name=batch1, x=comparison['Сырье'], y=comparison['Себестоимость_на_единицу_продукции_1'], marker_color='#2E86AB'))
+                    fig_comp.add_trace(go.Bar(name=batch2, x=comparison['Сырье'], y=comparison['Себестоимость_на_единицу_продукции_2'], marker_color='#D9534F'))
+                    fig_comp.update_layout(title='Сравнение затрат на сырьё по партиям',
+                                           xaxis_title='Сырьё',
+                                           yaxis_title='Затраты (₽/шт.)',
+                                           barmode='group',
+                                           xaxis_tickangle=-45)
+                    st.plotly_chart(fig_comp, use_container_width=True)
 
 # ==========================================
 # СТРАНИЦА 5: ЛОГИСТИКА UPDATE
 # ==========================================
 elif page == "🚚 Логистика Update":
     st.title("🚚 Аналитика логистики (обновленная)")
+    
     if logistics_update_df.empty:
-        st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден")
+        st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден или не удалось загрузить данные.")
+        st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
     else:
-        st.dataframe(logistics_update_df.head(100), use_container_width=True)
+        st.markdown("### Данные по доставке от КЗ до PLM и от PLM до РЦ")
+        
+        # Фильтры
+        st.divider()
+        
+        col_filter1, col_filter2, col_filter3 = st.columns(3)
+        
+        with col_filter1:
+            available_years = sorted(logistics_update_df['Год'].dropna().unique())
+            if len(available_years) == 0:
+                available_years = [2024]
+            selected_year_log_upd = st.selectbox("📅 Выберите год", available_years, key="log_upd_year")
+        
+        with col_filter2:
+            df_year_log_upd = logistics_update_df[logistics_update_df['Год'] == selected_year_log_upd]
+            available_months = sorted(df_year_log_upd['Месяц'].dropna().unique())
+            available_months_display = [month_names[m] for m in available_months]
+            selected_month_display_log_upd = st.selectbox("📅 Выберите месяц", available_months_display, key="log_upd_month")
+            selected_month_log_upd = available_months[available_months_display.index(selected_month_display_log_upd)]
+        
+        with col_filter3:
+            df_month_log_upd = df_year_log_upd[df_year_log_upd['Месяц'] == selected_month_log_upd]
+            if 'Город' in df_month_log_upd.columns:
+                all_cities = sorted(df_month_log_upd['Город'].dropna().unique())
+                selected_cities_log_upd = st.multiselect(
+                    "🏙️ Выберите города",
+                    all_cities,
+                    default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+                    key="log_upd_cities"
+                )
+            else:
+                selected_cities_log_upd = []
+        
+        # Фильтруем данные
+        mask = (logistics_update_df['Год'] == selected_year_log_upd) & (logistics_update_df['Месяц'] == selected_month_log_upd)
+        if selected_cities_log_upd:
+            mask = mask & (logistics_update_df['Город'].isin(selected_cities_log_upd))
+        df_filtered_log_upd = logistics_update_df[mask]
+        
+        # Основные метрики
+        st.divider()
+        st.subheader(f"📊 ИТОГИ ЛОГИСТИКИ ЗА {selected_month_display_log_upd} {selected_year_log_upd}")
+        
+        total_plm_to_rc = df_filtered_log_upd['Сумма_PLM_до_PЦ'].sum()
+        total_kz_to_plm = df_filtered_log_upd['Сумма_КЗ_до_PLM'].sum()
+        total_delivery = total_plm_to_rc + total_kz_to_plm
+        total_pallets = df_filtered_log_upd['Кол_во_паллет'].sum()
+        total_orders = len(df_filtered_log_upd)
+        
+        c1, c2, c3, c4, c5 = st.columns(5)
+        with c1:
+            st.metric("🚛 Доставка КЗ→PLM", f"{format_number(total_kz_to_plm)} ₽")
+        with c2:
+            st.metric("📦 Доставка PLM→РЦ", f"{format_number(total_plm_to_rc)} ₽")
+        with c3:
+            st.metric("💰 Итого логистика", f"{format_number(total_delivery)} ₽")
+        with c4:
+            st.metric("📦 Кол-во паллет", f"{format_number(total_pallets)}")
+        with c5:
+            st.metric("📋 Кол-во заказов", f"{format_number(total_orders)}")
+        
+        avg_cost_per_pallet = total_delivery / total_pallets if total_pallets > 0 else 0
+        st.metric("📊 Средняя стоимость паллеты", f"{format_number(avg_cost_per_pallet)} ₽/паллета")
+        
+        st.divider()
+        
+        # Помесячная разбивка
+        st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log_upd} ГОД")
+        
+        monthly_log_upd = logistics_update_df[logistics_update_df['Год'] == selected_year_log_upd].groupby('Месяц').agg({
+            'Сумма_PLM_до_PЦ': 'sum',
+            'Сумма_КЗ_до_PLM': 'sum',
+            'Кол_во_паллет': 'sum'
+        }).reset_index()
+        monthly_log_upd['Название'] = monthly_log_upd['Месяц'].map(month_names)
+        monthly_log_upd['Итого'] = monthly_log_upd['Сумма_PLM_до_PЦ'] + monthly_log_upd['Сумма_КЗ_до_PLM']
+        monthly_log_upd = monthly_log_upd.sort_values('Месяц')
+        
+        for _, row in monthly_log_upd.iterrows():
+            cols = st.columns([1.5, 1, 1, 1, 1])
+            with cols[0]:
+                st.markdown(f"**{row['Название']}**")
+            with cols[1]:
+                st.metric("КЗ→PLM", f"{format_number(row['Сумма_КЗ_до_PLM'])} ₽", label_visibility="collapsed")
+            with cols[2]:
+                st.metric("PLM→РЦ", f"{format_number(row['Сумма_PLM_до_PЦ'])} ₽", label_visibility="collapsed")
+            with cols[3]:
+                st.metric("Итого", f"{format_number(row['Итого'])} ₽", label_visibility="collapsed")
+            with cols[4]:
+                st.metric("Паллет", format_number(row['Кол_во_паллет']), label_visibility="collapsed")
+        
+        st.divider()
+        
+        # Графики
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if selected_cities_log_upd and 'Город' in df_filtered_log_upd.columns:
+                city_costs = df_filtered_log_upd.groupby('Город')['Сумма_PLM_до_PЦ'].sum().nlargest(10).reset_index()
+                if not city_costs.empty:
+                    fig = px.bar(city_costs, x='Сумма_PLM_до_PЦ', y='Город', orientation='h',
+                                 title='Топ городов по затратам PLM→РЦ',
+                                 color='Сумма_PLM_до_PЦ', color_continuous_scale='Blues',
+                                 labels={'Сумма_PLM_до_PЦ': 'Затраты (₽)', 'Город': ''})
+                    st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            if not monthly_log_upd.empty:
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(name='КЗ→PLM', x=monthly_log_upd['Название'], y=monthly_log_upd['Сумма_КЗ_до_PLM'], marker_color='#2E86AB'))
+                fig2.add_trace(go.Bar(name='PLM→РЦ', x=monthly_log_upd['Название'], y=monthly_log_upd['Сумма_PLM_до_PЦ'], marker_color='#52B788'))
+                fig2.update_layout(title='Структура затрат на логистику по месяцам',
+                                   xaxis_title='Месяц',
+                                   yaxis_title='Затраты (₽)',
+                                   barmode='stack')
+                st.plotly_chart(fig2, use_container_width=True)
+        
+        # Детали за выбранный месяц
+        st.divider()
+        st.subheader(f"📋 ДЕТАЛИ ЗА {selected_month_display_log_upd} {selected_year_log_upd}")
+        
+        if not df_filtered_log_upd.empty:
+            display_cols = ['Дата отгрузки', 'Город', 'Кол_во_паллет', 
+                           'Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС',
+                           'Итого доставка заказа от PLM до РЦ в т.ч. НДС']
+            display_cols = [c for c in display_cols if c in df_filtered_log_upd.columns]
+            
+            df_display_upd = df_filtered_log_upd[display_cols].copy()
+            for col in display_cols:
+                if 'Цена' in col or 'Итого' in col:
+                    if col in df_display_upd.columns:
+                        df_display_upd[col] = df_display_upd[col].apply(lambda x: f"{format_number(x)} ₽" if pd.notna(x) else "0 ₽")
+            
+            st.dataframe(df_display_upd.head(100), use_container_width=True)
+            
+            csv_upd = df_filtered_log_upd[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+            st.download_button("📥 Скачать данные (CSV)", csv_upd, f"logistics_update_{selected_year_log_upd}_{selected_month_log_upd}.csv", "text/csv")
+        else:
+            st.info("Нет данных за выбранный период")
+        
+        st.caption(f"📅 {selected_month_display_log_upd} {selected_year_log_upd} | Записей: {len(df_filtered_log_upd)}")
 
 # ==========================================
 # СТРАНИЦА 6: АНАЛИТИКА ПРОИЗВОДСТВА
