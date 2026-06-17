@@ -1758,63 +1758,138 @@ elif page == "🏭 Формирование себестоимости ПФ":
                     st.plotly_chart(fig_comp, use_container_width=True)
 
 # ==========================================
-# СТРАНИЦА 5: ЛОГИСТИКА UPDATE
+# СТРАНИЦА 5: ЛОГИСТИКА UPDATE (ИЗ ФАЙЛА logistics_data.xlsx)
 # ==========================================
 elif page == "🚚 Логистика Update":
     st.title("🚚 Аналитика логистики (обновленная)")
     
-    if logistics_update_df.empty:
-        st.warning("⚠️ Файл 'BI logisticks.xlsx' не найден или не удалось загрузить данные.")
+    if logistics_df.empty:
+        st.warning("⚠️ Файл 'logistics_data.xlsx' не найден или не удалось загрузить данные.")
         st.info("📌 Пожалуйста, добавьте файл с данными по логистике в папку с приложением.")
     else:
         st.markdown("### Данные по доставке от КЗ до PLM и от PLM до РЦ")
         
-        # Фильтры
+        # ===== ПОДГОТОВКА ДАННЫХ =====
+        df_log_upd = logistics_df.copy()
+        
+        # Фильтруем только строки для анализа
+        if 'Принимать к анализу?' in df_log_upd.columns:
+            df_log_upd = df_log_upd[df_log_upd['Принимать к анализу?'] == 1]
+        
+        # Определяем дату
+        if 'Дата отгрузки' in df_log_upd.columns:
+            df_log_upd['Дата'] = pd.to_datetime(df_log_upd['Дата отгрузки'], errors='coerce')
+        elif 'Дата заказа' in df_log_upd.columns:
+            df_log_upd['Дата'] = pd.to_datetime(df_log_upd['Дата заказа'], errors='coerce')
+        else:
+            df_log_upd['Дата'] = pd.Timestamp.now()
+        
+        # Удаляем строки с некорректными датами
+        df_log_upd = df_log_upd.dropna(subset=['Дата'])
+        
+        if df_log_upd.empty:
+            st.warning("⚠️ Нет данных с корректными датами")
+            st.stop()
+        
+        # Создаём временные признаки
+        df_log_upd['Год'] = df_log_upd['Дата'].dt.year
+        df_log_upd['Месяц'] = df_log_upd['Дата'].dt.month
+        df_log_upd['Месяц_название'] = df_log_upd['Месяц'].map(month_names)
+        df_log_upd['Месяц_год'] = df_log_upd['Дата'].dt.strftime('%Y-%m')
+        
+        # ===== КЛЮЧЕВЫЕ КОЛОНКИ ИЗ ФАЙЛА =====
+        # Столбец AB (индекс 27) - затраты на логистику
+        if len(df_log_upd.columns) > 27:
+            ab_column = df_log_upd.columns[27]
+            df_log_upd['Логистика_затраты'] = pd.to_numeric(df_log_upd[ab_column], errors='coerce').fillna(0)
+        else:
+            st.error(f"❌ Столбец AB не найден (всего колонок: {len(df_log_upd.columns)})")
+            st.stop()
+        
+        # Столбец I (индекс 8) - количество паллет
+        if len(df_log_upd.columns) > 8:
+            pallet_column = df_log_upd.columns[8]
+            df_log_upd['Кол-во паллет в заказе'] = pd.to_numeric(df_log_upd[pallet_column], errors='coerce').fillna(0)
+        else:
+            df_log_upd['Кол-во паллет в заказе'] = 0
+        
+        # Стоимость товаров (столбец Y - Стоимость товара в заказе Без НДС)
+        if 'Стоимость товара в заказе Без НДС' in df_log_upd.columns:
+            df_log_upd['Стоимость_товара_в_заказе'] = pd.to_numeric(df_log_upd['Стоимость товара в заказе Без НДС'], errors='coerce').fillna(0)
+        else:
+            df_log_upd['Стоимость_товара_в_заказе'] = 0
+        
+        # Доставка от PLM до РЦ (столбец B)
+        if 'Итого доставка заказа от PLM до РЦ. Без НДС' in df_log_upd.columns:
+            df_log_upd['Доставка_PLM_до_РЦ'] = pd.to_numeric(df_log_upd['Итого доставка заказа от PLM до РЦ. Без НДС'], errors='coerce').fillna(0)
+        else:
+            df_log_upd['Доставка_PLM_до_РЦ'] = 0
+        
+        # Доставка от КЗ до PLM (столбец F)
+        if 'Цена доставки этого заказа от КЗ до PLM.. Без НДС' in df_log_upd.columns:
+            df_log_upd['Доставка_КЗ_до_PLM'] = pd.to_numeric(df_log_upd['Цена доставки этого заказа от КЗ до PLM.. Без НДС'], errors='coerce').fillna(0)
+        else:
+            df_log_upd['Доставка_КЗ_до_PLM'] = 0
+        
+        # ===== ФИЛЬТРЫ =====
         st.divider()
         
         col_filter1, col_filter2, col_filter3 = st.columns(3)
         
         with col_filter1:
-            available_years = sorted(logistics_update_df['Год'].dropna().unique())
+            available_years = sorted(df_log_upd['Год'].dropna().unique())
             if len(available_years) == 0:
                 available_years = [2024]
             selected_year_log_upd = st.selectbox("📅 Выберите год", available_years, key="log_upd_year")
         
         with col_filter2:
-            df_year_log_upd = logistics_update_df[logistics_update_df['Год'] == selected_year_log_upd]
+            df_year_log_upd = df_log_upd[df_log_upd['Год'] == selected_year_log_upd]
             available_months = sorted(df_year_log_upd['Месяц'].dropna().unique())
             available_months_display = [month_names[m] for m in available_months]
-            selected_month_display_log_upd = st.selectbox("📅 Выберите месяц", available_months_display, key="log_upd_month")
-            selected_month_log_upd = available_months[available_months_display.index(selected_month_display_log_upd)]
+            if available_months_display:
+                selected_month_display_log_upd = st.selectbox("📅 Выберите месяц", available_months_display, key="log_upd_month")
+                selected_month_log_upd = available_months[available_months_display.index(selected_month_display_log_upd)]
+            else:
+                st.warning("Нет данных за выбранный год")
+                st.stop()
         
         with col_filter3:
             df_month_log_upd = df_year_log_upd[df_year_log_upd['Месяц'] == selected_month_log_upd]
             if 'Город' in df_month_log_upd.columns:
                 all_cities = sorted(df_month_log_upd['Город'].dropna().unique())
-                selected_cities_log_upd = st.multiselect(
-                    "🏙️ Выберите города",
-                    all_cities,
-                    default=all_cities[:5] if len(all_cities) > 5 else all_cities,
-                    key="log_upd_cities"
-                )
+                if all_cities:
+                    selected_cities_log_upd = st.multiselect(
+                        "🏙️ Выберите города",
+                        all_cities,
+                        default=all_cities[:5] if len(all_cities) > 5 else all_cities,
+                        key="log_upd_cities"
+                    )
+                else:
+                    selected_cities_log_upd = []
             else:
                 selected_cities_log_upd = []
         
         # Фильтруем данные
-        mask = (logistics_update_df['Год'] == selected_year_log_upd) & (logistics_update_df['Месяц'] == selected_month_log_upd)
+        mask = (df_log_upd['Год'] == selected_year_log_upd) & (df_log_upd['Месяц'] == selected_month_log_upd)
         if selected_cities_log_upd:
-            mask = mask & (logistics_update_df['Город'].isin(selected_cities_log_upd))
-        df_filtered_log_upd = logistics_update_df[mask]
+            mask = mask & (df_log_upd['Город'].isin(selected_cities_log_upd))
+        df_filtered_log_upd = df_log_upd[mask]
         
-        # Основные метрики
+        if df_filtered_log_upd.empty:
+            st.warning("⚠️ Нет данных для выбранных фильтров")
+            st.stop()
+        
+        # ===== ОСНОВНЫЕ МЕТРИКИ =====
         st.divider()
         st.subheader(f"📊 ИТОГИ ЛОГИСТИКИ ЗА {selected_month_display_log_upd} {selected_year_log_upd}")
         
-        total_plm_to_rc = df_filtered_log_upd['Сумма_PLM_до_PЦ'].sum()
-        total_kz_to_plm = df_filtered_log_upd['Сумма_КЗ_до_PLM'].sum()
+        total_plm_to_rc = df_filtered_log_upd['Доставка_PLM_до_РЦ'].sum()
+        total_kz_to_plm = df_filtered_log_upd['Доставка_КЗ_до_PLM'].sum()
         total_delivery = total_plm_to_rc + total_kz_to_plm
-        total_pallets = df_filtered_log_upd['Кол_во_паллет'].sum()
+        total_pallets = df_filtered_log_upd['Кол-во паллет в заказе'].sum()
         total_orders = len(df_filtered_log_upd)
+        total_logistics_cost = df_filtered_log_upd['Логистика_затраты'].sum()
+        total_goods_cost = df_filtered_log_upd['Стоимость_товара_в_заказе'].sum()
         
         c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
@@ -1828,82 +1903,165 @@ elif page == "🚚 Логистика Update":
         with c5:
             st.metric("📋 Кол-во заказов", f"{format_number(total_orders)}")
         
-        avg_cost_per_pallet = total_delivery / total_pallets if total_pallets > 0 else 0
-        st.metric("📊 Средняя стоимость паллеты", f"{format_number(avg_cost_per_pallet)} ₽/паллета")
+        # Дополнительные метрики
+        c6, c7 = st.columns(2)
+        with c6:
+            avg_cost_per_pallet = total_delivery / total_pallets if total_pallets > 0 else 0
+            st.metric("📊 Средняя стоимость паллеты", f"{format_number(avg_cost_per_pallet)} ₽/паллета")
+        with c7:
+            logistics_share = (total_logistics_cost / total_goods_cost * 100) if total_goods_cost > 0 else 0
+            st.metric("📈 Доля логистики в стоимости товаров", f"{format_float(logistics_share, 1)}%")
         
         st.divider()
         
-        # Помесячная разбивка
+        # ===== ПОМЕСЯЧНАЯ РАЗБИВКА =====
         st.subheader(f"📅 ПОМЕСЯЧНАЯ РАЗБИВКА ЗА {selected_year_log_upd} ГОД")
         
-        monthly_log_upd = logistics_update_df[logistics_update_df['Год'] == selected_year_log_upd].groupby('Месяц').agg({
-            'Сумма_PLM_до_PЦ': 'sum',
-            'Сумма_КЗ_до_PLM': 'sum',
-            'Кол_во_паллет': 'sum'
+        monthly_log_upd = df_log_upd[df_log_upd['Год'] == selected_year_log_upd].groupby('Месяц').agg({
+            'Доставка_PLM_до_РЦ': 'sum',
+            'Доставка_КЗ_до_PLM': 'sum',
+            'Кол-во паллет в заказе': 'sum',
+            'Логистика_затраты': 'sum',
+            'Стоимость_товара_в_заказе': 'sum'
         }).reset_index()
         monthly_log_upd['Название'] = monthly_log_upd['Месяц'].map(month_names)
-        monthly_log_upd['Итого'] = monthly_log_upd['Сумма_PLM_до_PЦ'] + monthly_log_upd['Сумма_КЗ_до_PLM']
+        monthly_log_upd['Итого'] = monthly_log_upd['Доставка_PLM_до_РЦ'] + monthly_log_upd['Доставка_КЗ_до_PLM']
+        monthly_log_upd['Доля_логистики_%'] = (monthly_log_upd['Логистика_затраты'] / monthly_log_upd['Стоимость_товара_в_заказе'].replace(0, 1) * 100)
         monthly_log_upd = monthly_log_upd.sort_values('Месяц')
         
+        # Отображаем помесячную разбивку
         for _, row in monthly_log_upd.iterrows():
-            cols = st.columns([1.5, 1, 1, 1, 1])
+            cols = st.columns([1.5, 1, 1, 1, 1, 1])
             with cols[0]:
                 st.markdown(f"**{row['Название']}**")
             with cols[1]:
-                st.metric("КЗ→PLM", f"{format_number(row['Сумма_КЗ_до_PLM'])} ₽", label_visibility="collapsed")
+                st.metric("КЗ→PLM", f"{format_number(row['Доставка_КЗ_до_PLM'])} ₽", label_visibility="collapsed")
             with cols[2]:
-                st.metric("PLM→РЦ", f"{format_number(row['Сумма_PLM_до_PЦ'])} ₽", label_visibility="collapsed")
+                st.metric("PLM→РЦ", f"{format_number(row['Доставка_PLM_до_РЦ'])} ₽", label_visibility="collapsed")
             with cols[3]:
                 st.metric("Итого", f"{format_number(row['Итого'])} ₽", label_visibility="collapsed")
             with cols[4]:
-                st.metric("Паллет", format_number(row['Кол_во_паллет']), label_visibility="collapsed")
+                st.metric("Паллет", format_number(row['Кол-во паллет в заказе']), label_visibility="collapsed")
+            with cols[5]:
+                st.metric("Доля логистики", f"{format_float(row['Доля_логистики_%'], 1)}%", label_visibility="collapsed")
         
         st.divider()
         
-        # Графики
+        # ===== ГРАФИКИ =====
         col1, col2 = st.columns(2)
         
         with col1:
             if selected_cities_log_upd and 'Город' in df_filtered_log_upd.columns:
-                city_costs = df_filtered_log_upd.groupby('Город')['Сумма_PLM_до_PЦ'].sum().nlargest(10).reset_index()
+                city_costs = df_filtered_log_upd.groupby('Город')['Логистика_затраты'].sum().nlargest(10).reset_index()
                 if not city_costs.empty:
-                    fig = px.bar(city_costs, x='Сумма_PLM_до_PЦ', y='Город', orientation='h',
-                                 title='Топ городов по затратам PLM→РЦ',
-                                 color='Сумма_PLM_до_PЦ', color_continuous_scale='Blues',
-                                 labels={'Сумма_PLM_до_PЦ': 'Затраты (₽)', 'Город': ''})
+                    fig = px.bar(city_costs, x='Логистика_затраты', y='Город', orientation='h',
+                                 title='Топ городов по затратам на логистику',
+                                 color='Логистика_затраты', color_continuous_scale='Blues',
+                                 labels={'Логистика_затраты': 'Затраты (₽)', 'Город': ''})
                     st.plotly_chart(fig, use_container_width=True)
         
         with col2:
             if not monthly_log_upd.empty:
                 fig2 = go.Figure()
-                fig2.add_trace(go.Bar(name='КЗ→PLM', x=monthly_log_upd['Название'], y=monthly_log_upd['Сумма_КЗ_до_PLM'], marker_color='#2E86AB'))
-                fig2.add_trace(go.Bar(name='PLM→РЦ', x=monthly_log_upd['Название'], y=monthly_log_upd['Сумма_PLM_до_PЦ'], marker_color='#52B788'))
+                fig2.add_trace(go.Bar(name='КЗ→PLM', x=monthly_log_upd['Название'], y=monthly_log_upd['Доставка_КЗ_до_PLM'], marker_color='#2E86AB'))
+                fig2.add_trace(go.Bar(name='PLM→РЦ', x=monthly_log_upd['Название'], y=monthly_log_upd['Доставка_PLM_до_РЦ'], marker_color='#52B788'))
                 fig2.update_layout(title='Структура затрат на логистику по месяцам',
                                    xaxis_title='Месяц',
                                    yaxis_title='Затраты (₽)',
-                                   barmode='stack')
+                                   barmode='stack',
+                                   height=400)
                 st.plotly_chart(fig2, use_container_width=True)
         
-        # Детали за выбранный месяц
+        # ===== ДИНАМИКА ПО МЕСЯЦАМ =====
+        if not monthly_log_upd.empty:
+            st.subheader("📈 Динамика логистических затрат")
+            
+            fig3 = go.Figure()
+            fig3.add_trace(go.Scatter(
+                x=monthly_log_upd['Название'],
+                y=monthly_log_upd['Итого'],
+                mode='lines+markers',
+                name='Общие затраты',
+                line=dict(color='#2E86AB', width=3),
+                marker=dict(size=10, color='#1A5276')
+            ))
+            fig3.add_trace(go.Scatter(
+                x=monthly_log_upd['Название'],
+                y=monthly_log_upd['Доля_логистики_%'],
+                mode='lines+markers',
+                name='Доля логистики, %',
+                line=dict(color='#D9534F', width=2, dash='dash'),
+                marker=dict(size=8, color='#D9534F'),
+                yaxis='y2'
+            ))
+            fig3.update_layout(
+                title='Динамика затрат и доли логистики по месяцам',
+                xaxis_title='Месяц',
+                yaxis_title='Затраты (₽)',
+                yaxis2=dict(
+                    title='Доля логистики (%)',
+                    overlaying='y',
+                    side='right'
+                ),
+                height=400,
+                hovermode='x unified'
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+        
         st.divider()
+        
+        # ===== ДЕТАЛИ ЗА ВЫБРАННЫЙ МЕСЯЦ =====
         st.subheader(f"📋 ДЕТАЛИ ЗА {selected_month_display_log_upd} {selected_year_log_upd}")
         
         if not df_filtered_log_upd.empty:
-            display_cols = ['Дата отгрузки', 'Город', 'Кол_во_паллет', 
-                           'Цена доставки этого заказа от КЗ до PLM. в т.ч. НДС',
-                           'Итого доставка заказа от PLM до РЦ в т.ч. НДС']
-            display_cols = [c for c in display_cols if c in df_filtered_log_upd.columns]
+            # Выбираем колонки для отображения
+            display_cols = []
+            col_mapping = {
+                'Дата': '📅 Дата',
+                'Город': '🏙️ Город',
+                'Категория': '📁 Категория',
+                'Подкатегория': '📂 Подкатегория',
+                'Номенклатура': '📦 Номенклатура',
+                'Кол-во паллет в заказе': '📦 Паллеты',
+                'Доставка_КЗ_до_PLM': '🚛 КЗ→PLM (без НДС)',
+                'Доставка_PLM_до_РЦ': '📦 PLM→РЦ (без НДС)',
+                'Логистика_затраты': '💰 Логистика (без НДС)',
+                'Стоимость_товара_в_заказе': '🏷️ Товары (без НДС)'
+            }
             
-            df_display_upd = df_filtered_log_upd[display_cols].copy()
-            for col in display_cols:
-                if 'Цена' in col or 'Итого' in col:
-                    if col in df_display_upd.columns:
-                        df_display_upd[col] = df_display_upd[col].apply(lambda x: f"{format_number(x)} ₽" if pd.notna(x) else "0 ₽")
+            for col in col_mapping.keys():
+                if col in df_filtered_log_upd.columns:
+                    display_cols.append(col)
             
-            st.dataframe(df_display_upd.head(100), use_container_width=True)
-            
-            csv_upd = df_filtered_log_upd[display_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
-            st.download_button("📥 Скачать данные (CSV)", csv_upd, f"logistics_update_{selected_year_log_upd}_{selected_month_log_upd}.csv", "text/csv")
+            if display_cols:
+                table_df = df_filtered_log_upd[display_cols].copy().head(100)
+                
+                # Форматирование
+                for col in ['Доставка_КЗ_до_PLM', 'Доставка_PLM_до_РЦ', 'Логистика_затраты', 'Стоимость_товара_в_заказе']:
+                    if col in table_df.columns:
+                        table_df[col] = table_df[col].apply(lambda x: f"{format_number(x)} ₽" if pd.notna(x) else "0 ₽")
+                
+                if 'Кол-во паллет в заказе' in table_df.columns:
+                    table_df['Кол-во паллет в заказе'] = table_df['Кол-во паллет в заказе'].apply(lambda x: format_number(x) if pd.notna(x) else "0")
+                
+                if 'Дата' in table_df.columns:
+                    table_df['Дата'] = table_df['Дата'].dt.strftime('%d.%m.%Y')
+                
+                # Переименовываем
+                table_df = table_df.rename(columns=col_mapping)
+                
+                st.dataframe(table_df, use_container_width=True)
+                st.caption(f"📄 Показано {min(100, len(table_df))} из {len(df_filtered_log_upd)} записей")
+                
+                # ===== ЭКСПОРТ =====
+                csv_cols = [c for c in display_cols if c in df_filtered_log_upd.columns]
+                csv_data = df_filtered_log_upd[csv_cols].to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
+                st.download_button(
+                    "📥 Скачать данные (CSV)", 
+                    csv_data, 
+                    f"logistics_update_{selected_year_log_upd}_{selected_month_log_upd}.csv", 
+                    "text/csv"
+                )
         else:
             st.info("Нет данных за выбранный период")
         
