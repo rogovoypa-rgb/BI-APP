@@ -1791,12 +1791,12 @@ elif page == "🚚 Логистика Update":
             st.stop()
         
         # ===== 2. КЛЮЧЕВЫЕ КОЛОНКИ =====
-        # Столбец I (индекс 8) - количество паллет
+        # Столбец I (индекс 8) - количество паллет (повторяется для номенклатур, но уникально для города)
         if len(df_log_upd.columns) > 8:
             pallet_col = df_log_upd.columns[8]
-            df_log_upd['Кол-во паллет'] = pd.to_numeric(df_log_upd[pallet_col], errors='coerce').fillna(0)
+            df_log_upd['Кол-во паллет_сырое'] = pd.to_numeric(df_log_upd[pallet_col], errors='coerce').fillna(0)
         else:
-            df_log_upd['Кол-во паллет'] = 0
+            df_log_upd['Кол-во паллет_сырое'] = 0
         
         # Столбец J (индекс 9) - Город
         if len(df_log_upd.columns) > 9:
@@ -1823,22 +1823,41 @@ elif page == "🚚 Логистика Update":
         if 'Номенклатура' in df_log_upd.columns:
             df_log_upd['Номенклатура'] = df_log_upd['Номенклатура']
         
-        # ===== 3. АГРЕГАЦИЯ ПО ЗАКАЗАМ (УНИКАЛЬНЫЕ ДАТЫ ОТГРУЗКИ) =====
-        # Группируем по дате отгрузки для получения уникальных заказов
-        df_orders = df_log_upd.groupby('Дата').agg({
-            'Город': 'first',  # город одинаковый для всего заказа
-            'Кол-во паллет': 'first',  # количество паллет одинаковое для всего заказа
-            'Логистика_затраты': 'first',  # логистика не повторяется
-            'Стоимость_товара': 'sum',  # стоимость товаров СУММИРУЕМ по всем номенклатурам
-            'Номенклатура': lambda x: list(x)  # список всех номенклатур в заказе
+        # ===== 3. ПЕРВЫЙ УРОВЕНЬ АГРЕГАЦИИ: (ДАТА + ГОРОД) =====
+        # Это нужно, чтобы получить уникальное количество паллет для каждого города в заказе
+        df_city_order = df_log_upd.groupby(['Дата', 'Город']).agg({
+            'Кол-во паллет_сырое': 'first',  # берём первое значение (оно одинаковое для всех номенклатур этого города)
+            'Логистика_затраты': 'first',    # логистика не зависит от города
+            'Стоимость_товара': 'sum',       # стоимость товаров суммируем по номенклатурам
+            'Номенклатура': lambda x: list(x)  # список номенклатур
         }).reset_index()
         
-        # Переименовываем колонку с номенклатурами
-        df_orders = df_orders.rename(columns={'Номенклатура': 'Список_номенклатур'})
+        # Переименовываем колонку
+        df_city_order = df_city_order.rename(columns={
+            'Кол-во паллет_сырое': 'Кол-во паллет_по_городу',
+            'Номенклатура': 'Список_номенклатур'
+        })
+        
+        # ===== 4. ВТОРОЙ УРОВЕНЬ АГРЕГАЦИИ: ПО ЗАКАЗАМ (ДАТА) =====
+        # Теперь суммируем паллеты по всем городам в заказе
+        df_orders = df_city_order.groupby('Дата').agg({
+            'Город': lambda x: list(x),  # список городов в заказе
+            'Кол-во паллет_по_городу': 'sum',  # СУММИРУЕМ паллеты по городам
+            'Логистика_затраты': 'first',  # логистика одна на весь заказ
+            'Стоимость_товара': 'sum',  # стоимость товаров суммируем по номенклатурам
+            'Список_номенклатур': lambda x: [item for sublist in x for item in sublist]  # объединяем списки номенклатур
+        }).reset_index()
+        
+        # Переименовываем колонку с паллетами
+        df_orders = df_orders.rename(columns={
+            'Кол-во паллет_по_городу': 'Кол-во паллет'
+        })
         
         # Добавляем количество позиций в заказе
-        items_count = df_log_upd.groupby('Дата').size().reset_index(name='Кол-во_позиций')
-        df_orders = df_orders.merge(items_count, on='Дата', how='left')
+        df_orders['Кол-во_позиций'] = df_orders['Список_номенклатур'].apply(len)
+        
+        # Добавляем количество городов в заказе
+        df_orders['Кол-во_городов'] = df_orders['Город'].apply(len)
         
         # Создаём временные признаки
         df_orders['Год'] = df_orders['Дата'].dt.year
@@ -1847,7 +1866,16 @@ elif page == "🚚 Логистика Update":
         df_orders['Месяц_год'] = df_orders['Дата'].dt.strftime('%Y-%m')
         df_orders['День'] = df_orders['Дата'].dt.day
         
-        # ===== 4. УРОВЕНЬ 1: АНАЛИЗ ПО МЕСЯЦАМ =====
+        # Для удобства, создаём колонку с первым городом (для фильтрации)
+        df_orders['Город_первый'] = df_orders['Город'].apply(lambda x: x[0] if x else 'Не указан')
+        
+        # Также создаём детальную таблицу (Дата + Город) для анализа по городам внутри заказов
+        df_city_detail = df_city_order.copy()
+        df_city_detail['Год'] = df_city_detail['Дата'].dt.year
+        df_city_detail['Месяц'] = df_city_detail['Дата'].dt.month
+        df_city_detail['Месяц_название'] = df_city_detail['Месяц'].map(month_names)
+        
+        # ===== 5. УРОВЕНЬ 1: АНАЛИЗ ПО МЕСЯЦАМ =====
         st.header("📊 УРОВЕНЬ 1: АНАЛИЗ ПО МЕСЯЦАМ")
         st.markdown("Агрегированные данные по всем заказам за месяц")
         
@@ -1861,32 +1889,33 @@ elif page == "🚚 Логистика Update":
             selected_year_l1 = st.selectbox("📅 Выберите год", available_years, key="l1_year")
         
         with col_f2:
-            if 'Город' in df_orders.columns:
-                all_cities_l1 = sorted(df_orders['Город'].dropna().unique().tolist())
-                selected_city_l1 = st.selectbox("🏙️ Город (опционально)", ['Все города'] + all_cities_l1, key="l1_city")
-            else:
-                selected_city_l1 = 'Все города'
+            # Получаем все города из детальной таблицы
+            all_cities_l1 = sorted(df_city_detail['Город'].dropna().unique().tolist())
+            selected_city_l1 = st.selectbox("🏙️ Город (опционально)", ['Все города'] + all_cities_l1, key="l1_city")
         
-        # Применяем фильтры
-        df_l1 = df_orders[df_orders['Год'] == selected_year_l1]
+        # Применяем фильтры к заказам
+        df_l1_orders = df_orders[df_orders['Год'] == selected_year_l1]
+        
+        # Если выбран конкретный город, фильтруем заказы, где есть этот город
         if selected_city_l1 != 'Все города':
-            df_l1 = df_l1[df_l1['Город'] == selected_city_l1]
+            df_l1_orders = df_l1_orders[df_l1_orders['Город'].apply(lambda x: selected_city_l1 in x)]
         
-        if df_l1.empty:
+        if df_l1_orders.empty:
             st.warning("⚠️ Нет данных для выбранных фильтров")
         else:
             # Агрегация по месяцам
-            monthly_l1 = df_l1.groupby('Месяц_название').agg({
+            monthly_l1 = df_l1_orders.groupby('Месяц_название').agg({
                 'Дата': 'count',  # количество заказов
                 'Стоимость_товара': 'sum',  # сумма товаров по всем заказам
                 'Логистика_затраты': 'sum',  # сумма логистики по всем заказам
                 'Кол-во паллет': 'sum',  # сумма паллет по всем заказам
-                'Кол-во_позиций': 'sum'  # сумма позиций по всем заказам
+                'Кол-во_позиций': 'sum',  # сумма позиций по всем заказам
+                'Кол-во_городов': 'sum'  # сумма городов по всем заказам
             }).reset_index()
             monthly_l1 = monthly_l1.rename(columns={'Дата': 'Количество_заказов'})
             
             # Сортируем по порядку месяцев
-            month_order = [month_names[m] for m in sorted(df_l1['Месяц'].unique())]
+            month_order = [month_names[m] for m in sorted(df_l1_orders['Месяц'].unique())]
             monthly_l1['Месяц_порядок'] = pd.Categorical(monthly_l1['Месяц_название'], categories=month_order, ordered=True)
             monthly_l1 = monthly_l1.sort_values('Месяц_порядок')
             
@@ -1902,8 +1931,10 @@ elif page == "🚚 Логистика Update":
             total_logistics_l1 = monthly_l1['Логистика_затраты'].sum()
             total_pallets_l1 = monthly_l1['Кол-во паллет'].sum()
             total_items_l1 = monthly_l1['Кол-во_позиций'].sum()
+            total_cities_l1 = monthly_l1['Кол-во_городов'].sum()
             avg_logistics_share = (total_logistics_l1 / total_goods_l1 * 100) if total_goods_l1 > 0 else 0
             avg_pallet_cost = total_logistics_l1 / total_pallets_l1 if total_pallets_l1 > 0 else 0
+            avg_cities_per_order = total_cities_l1 / total_orders_l1 if total_orders_l1 > 0 else 0
             
             col_m1, col_m2, col_m3, col_m4, col_m5 = st.columns(5)
             with col_m1:
@@ -1917,6 +1948,13 @@ elif page == "🚚 Логистика Update":
             with col_m5:
                 st.metric("📦 Средняя цена паллеты", f"{format_number(avg_pallet_cost)} ₽")
             
+            # Дополнительные метрики
+            col_m6, col_m7 = st.columns(2)
+            with col_m6:
+                st.metric("📦 Всего паллет", format_number(total_pallets_l1))
+            with col_m7:
+                st.metric("🏙️ Среднее кол-во городов в заказе", format_float(avg_cities_per_order, 1))
+            
             st.divider()
             
             # ===== ТАБЛИЦА ПО МЕСЯЦАМ =====
@@ -1928,10 +1966,11 @@ elif page == "🚚 Логистика Update":
             display_l1['Доля_логистики_%'] = display_l1['Доля_логистики_%'].apply(lambda x: f"{format_float(x, 1)}%")
             display_l1['Количество_заказов'] = display_l1['Количество_заказов'].apply(lambda x: format_number(x))
             display_l1['Кол-во паллет'] = display_l1['Кол-во паллет'].apply(lambda x: format_number(x))
+            display_l1['Кол-во_городов'] = display_l1['Кол-во_городов'].apply(lambda x: format_number(x))
             display_l1['Средняя_стоимость_паллеты'] = display_l1['Средняя_стоимость_паллеты'].apply(lambda x: f"{format_number(x)} ₽")
             
             st.dataframe(
-                display_l1[['Месяц_название', 'Количество_заказов', 'Кол-во паллет', 
+                display_l1[['Месяц_название', 'Количество_заказов', 'Кол-во паллет', 'Кол-во_городов',
                            'Стоимость_товара', 'Логистика_затраты', 'Доля_логистики_%', 'Средняя_стоимость_паллеты']],
                 use_container_width=True,
                 hide_index=True
@@ -2002,7 +2041,7 @@ elif page == "🚚 Логистика Update":
             
             st.divider()
         
-        # ===== 5. УРОВЕНЬ 2: АНАЛИЗ ПО ЗАКАЗАМ =====
+        # ===== 6. УРОВЕНЬ 2: АНАЛИЗ ПО ЗАКАЗАМ =====
         st.header("📋 УРОВЕНЬ 2: АНАЛИЗ ПО ЗАКАЗАМ")
         st.markdown("Детальный анализ по каждому заказу (дате отгрузки)")
         
@@ -2027,19 +2066,18 @@ elif page == "🚚 Логистика Update":
                 st.stop()
         
         with col_f5:
-            df_month_l2 = df_year_l2[df_year_l2['Месяц'] == selected_month_l2]
-            if 'Город' in df_month_l2.columns:
-                all_cities_l2 = sorted(df_month_l2['Город'].dropna().unique().tolist())
-                selected_city_l2 = st.selectbox("🏙️ Город", ['Все города'] + all_cities_l2, key="l2_city")
-            else:
-                selected_city_l2 = 'Все города'
+            # Для фильтрации по городу используем детальную таблицу
+            all_cities_l2 = sorted(df_city_detail['Город'].dropna().unique().tolist())
+            selected_city_l2 = st.selectbox("🏙️ Город", ['Все города'] + all_cities_l2, key="l2_city")
         
-        # Применяем фильтры
+        # Применяем фильтры к заказам
         df_l2 = df_orders.copy()
         df_l2 = df_l2[df_l2['Год'] == selected_year_l2]
         df_l2 = df_l2[df_l2['Месяц'] == selected_month_l2]
+        
+        # Если выбран конкретный город, фильтруем заказы, где есть этот город
         if selected_city_l2 != 'Все города':
-            df_l2 = df_l2[df_l2['Город'] == selected_city_l2]
+            df_l2 = df_l2[df_l2['Город'].apply(lambda x: selected_city_l2 in x)]
         
         if df_l2.empty:
             st.warning("⚠️ Нет данных для выбранных фильтров")
@@ -2076,13 +2114,14 @@ elif page == "🚚 Логистика Update":
             
             display_l2 = df_l2.copy()
             display_l2['Дата_отгрузки'] = display_l2['Дата'].dt.strftime('%d.%m.%Y')
+            display_l2['Города'] = display_l2['Город'].apply(lambda x: ', '.join(x))
             display_l2['Стоимость_товара'] = display_l2['Стоимость_товара'].apply(lambda x: f"{format_number(x)} ₽")
             display_l2['Логистика_затраты'] = display_l2['Логистика_затраты'].apply(lambda x: f"{format_number(x)} ₽")
-            display_l2['Доля_логистики_%'] = (display_l2['Логистика_затраты'].str.replace(' ₽', '').str.replace(' ', '').astype(float) / 
-                                               display_l2['Стоимость_товара'].str.replace(' ₽', '').str.replace(' ', '').astype(float) * 100)
+            display_l2['Доля_логистики_%'] = (df_l2['Логистика_затраты'] / df_l2['Стоимость_товара'].replace(0, 1) * 100)
             display_l2['Доля_логистики_%'] = display_l2['Доля_логистики_%'].apply(lambda x: f"{format_float(x, 1)}%")
             display_l2['Кол-во паллет'] = display_l2['Кол-во паллет'].apply(lambda x: format_number(x))
             display_l2['Кол-во_позиций'] = display_l2['Кол-во_позиций'].apply(lambda x: format_number(x))
+            display_l2['Кол-во_городов'] = display_l2['Кол-во_городов'].apply(lambda x: format_number(x))
             
             # Показываем первые 3 номенклатуры для каждого заказа
             display_l2['Номенклатуры'] = display_l2['Список_номенклатур'].apply(
@@ -2090,17 +2129,38 @@ elif page == "🚚 Логистика Update":
             )
             
             st.dataframe(
-                display_l2[['Дата_отгрузки', 'Город', 'Кол-во паллет', 'Кол-во_позиций', 
+                display_l2[['Дата_отгрузки', 'Города', 'Кол-во паллет', 'Кол-во_позиций', 'Кол-во_городов',
                            'Стоимость_товара', 'Логистика_затраты', 'Доля_логистики_%', 'Номенклатуры']],
                 use_container_width=True,
                 hide_index=True
             )
+            
+            # ===== ДЕТАЛЬНАЯ ТАБЛИЦА ПО ГОРОДАМ В ЗАКАЗЕ =====
+            with st.expander("🏙️ Детализация по городам в заказах"):
+                # Фильтруем детальную таблицу по выбранным заказам
+                order_dates = df_l2['Дата'].tolist()
+                df_city_detail_filtered = df_city_detail[df_city_detail['Дата'].isin(order_dates)]
+                
+                if selected_city_l2 != 'Все города':
+                    df_city_detail_filtered = df_city_detail_filtered[df_city_detail_filtered['Город'] == selected_city_l2]
+                
+                display_cities = df_city_detail_filtered.copy()
+                display_cities['Дата_отгрузки'] = display_cities['Дата'].dt.strftime('%d.%m.%Y')
+                display_cities['Стоимость_товара'] = display_cities['Стоимость_товара'].apply(lambda x: f"{format_number(x)} ₽")
+                display_cities['Кол-во паллет_по_городу'] = display_cities['Кол-во паллет_по_городу'].apply(lambda x: format_number(x))
+                
+                st.dataframe(
+                    display_cities[['Дата_отгрузки', 'Город', 'Кол-во паллет_по_городу', 'Стоимость_товара']],
+                    use_container_width=True,
+                    hide_index=True
+                )
             
             # ===== ЭКСПОРТ =====
             export_cols = ['Дата', 'Город', 'Кол-во паллет', 'Кол-во_позиций', 
                           'Стоимость_товара', 'Логистика_затраты', 'Список_номенклатур']
             export_df = df_l2[export_cols].copy()
             export_df['Дата'] = export_df['Дата'].dt.strftime('%Y-%m-%d')
+            export_df['Город'] = export_df['Город'].apply(lambda x: ', '.join(x))
             csv_data = export_df.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
             
             st.download_button(
@@ -2125,28 +2185,30 @@ elif page == "🚚 Логистика Update":
                     y='Логистика_затраты',
                     title='Топ-10 заказов по затратам на логистику',
                     labels={'Дата': 'Дата отгрузки', 'Логистика_затраты': 'Затраты (₽)'},
-                    color='Город',
-                    color_discrete_sequence=px.colors.qualitative.Set2
+                    color='Кол-во_городов',
+                    color_continuous_scale='Viridis',
+                    text=top_orders['Кол-во_городов'].apply(lambda x: f'{x} городов')
                 )
                 fig3.update_layout(height=400, xaxis_tickangle=-45)
                 st.plotly_chart(fig3, use_container_width=True)
             
             with col_g4:
-                # Распределение по городам
-                city_stats = df_l2.groupby('Город').agg({
-                    'Логистика_затраты': 'sum',
-                    'Кол-во паллет': 'sum',
-                    'Дата': 'count'
+                # Распределение по городам (из детальной таблицы)
+                city_stats = df_city_detail_filtered.groupby('Город').agg({
+                    'Кол-во паллет_по_городу': 'sum',
+                    'Стоимость_товара': 'sum'
                 }).reset_index()
-                city_stats = city_stats.rename(columns={'Дата': 'Количество_заказов'})
-                city_stats = city_stats.sort_values('Логистика_затраты', ascending=False)
+                city_stats = city_stats.sort_values('Кол-во паллет_по_городу', ascending=False)
                 
-                fig4 = px.pie(
+                fig4 = px.bar(
                     city_stats,
-                    values='Логистика_затраты',
-                    names='Город',
-                    title='Распределение затрат на логистику по городам',
-                    color_discrete_sequence=px.colors.qualitative.Set3
+                    x='Город',
+                    y='Кол-во паллет_по_городу',
+                    title='Количество паллет по городам',
+                    labels={'Кол-во паллет_по_городу': 'Количество паллет', 'Город': ''},
+                    color='Стоимость_товара',
+                    color_continuous_scale='Blues',
+                    text=city_stats['Кол-во паллет_по_городу'].apply(lambda x: format_number(x))
                 )
                 fig4.update_layout(height=400)
                 st.plotly_chart(fig4, use_container_width=True)
@@ -2158,13 +2220,14 @@ elif page == "🚚 Логистика Update":
                 y=df_l2['Логистика_затраты'],
                 mode='markers',
                 marker=dict(
-                    size=df_l2['Кол-во паллет'] / df_l2['Кол-во паллет'].max() * 30 + 5,
-                    color=df_l2['Город'].astype('category').cat.codes,
+                    size=df_l2['Кол-во городов'] * 8 + 5,
+                    color=df_l2['Кол-во городов'],
                     colorscale='Viridis',
                     showscale=True,
-                    colorbar=dict(title='Город')
+                    colorbar=dict(title='Кол-во городов'),
+                    sizemode='diameter'
                 ),
-                text=df_l2['Дата'].dt.strftime('%d.%m.%Y') + ' - ' + df_l2['Город'],
+                text=df_l2['Дата'].dt.strftime('%d.%m.%Y') + ' - ' + df_l2['Город'].apply(lambda x: ', '.join(x)),
                 hoverinfo='text+x+y'
             ))
             fig5.update_layout(
