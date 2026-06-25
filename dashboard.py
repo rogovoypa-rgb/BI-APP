@@ -650,30 +650,34 @@ if page == "📈 Продажи":
             # Таблица по месяцам
             st.markdown("**📋 Помесячная детализация:**")
             
-            # Создаём таблицу для отображения - включаем только существующие колонки
-            base_columns = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
-            display_df = customer_monthly[base_columns].copy()
+            # Создаём таблицу для отображения - используем copy() чтобы избежать предупреждений
+            display_df = customer_monthly[['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 
+                                           'Количество', 'Рентабельность']].copy()
             
-            # Переименовываем базовые колонки
-            display_df = display_df.rename(columns={
+            # Добавляем себестоимость только если она есть (ИСПРАВЛЕНО: используем .values.ravel())
+            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
+                display_df['Себестоимость'] = customer_monthly['Себестоимость'].values.ravel()
+            
+            # Переименовываем колонки
+            rename_dict = {
                 'Название': 'Месяц',
                 'Выручка_без_НДС': 'Выручка',
                 'Валовая_прибыль': 'Прибыль',
                 'Количество': 'Кол-во (шт)',
                 'Рентабельность': 'Рентабельность'
-            })
+            }
+            if has_cost_column and 'Себестоимость' in display_df.columns:
+                rename_dict['Себестоимость'] = 'Себестоимость'
             
-            # Добавляем себестоимость только если она есть и форматируем сразу
-            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
-                display_df['Себестоимость'] = customer_monthly['Себестоимость'].values
-                # Форматируем себестоимость
-                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
+            display_df = display_df.rename(columns=rename_dict)
             
-            # Форматирование остальных колонок
+            # Форматирование - проверяем наличие каждой колонки
             if 'Выручка' in display_df.columns:
                 display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Прибыль' in display_df.columns:
                 display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Себестоимость' in display_df.columns:
+                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Рентабельность' in display_df.columns:
                 display_df['Рентабельность'] = display_df['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
             if 'Кол-во (шт)' in display_df.columns:
