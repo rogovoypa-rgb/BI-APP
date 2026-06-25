@@ -643,8 +643,7 @@ if page == "📈 Продажи":
             with col_m3:
                 st.metric("📦 Себестоимость", f"{format_number(total_cost)} ₽")
             with col_m4:
-                margin_color = "inverse" if total_margin < 0 else "normal"
-                st.metric("🎯 Рентабельность", f"{format_float(total_margin, 1)}%", delta_color=margin_color)
+                st.metric("🎯 Рентабельность", f"{format_float(total_margin, 1)}%")
             with col_m5:
                 st.metric("📦 Продано (шт)", f"{format_number(total_quantity)}")
             
@@ -654,7 +653,16 @@ if page == "📈 Продажи":
             # Создаём таблицу для отображения
             display_df = customer_monthly[['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 
                                            'Себестоимость', 'Рентабельность', 'Количество']].copy()
-            display_df.columns = ['Месяц', 'Выручка', 'Прибыль', 'Себестоимость', 'Рентабельность', 'Кол-во (шт)']
+            
+            # Переименовываем колонки
+            display_df = display_df.rename(columns={
+                'Название': 'Месяц',
+                'Выручка_без_НДС': 'Выручка',
+                'Валовая_прибыль': 'Прибыль',
+                'Себестоимость': 'Себестоимость',
+                'Рентабельность': 'Рентабельность',
+                'Количество': 'Кол-во (шт)'
+            })
             
             # Форматирование
             display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
@@ -723,7 +731,7 @@ if page == "📈 Продажи":
                     title='Рентабельность (%)',
                     overlaying='y',
                     side='right',
-                    range=[-50, 100]  # Фиксированный диапазон для рентабельности
+                    range=[-50, 100]
                 ),
                 barmode='group',
                 height=400,
@@ -775,7 +783,13 @@ if page == "📈 Продажи":
             display_summary['Рентабельность'] = display_summary['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
             display_summary['Кол-во (шт)'] = display_summary['Кол-во (шт)'].apply(lambda x: format_number(x))
             
-            st.dataframe(display_summary, use_container_width=True, hide_index=True)
+            # Подсвечиваем отрицательную рентабельность
+            styled_summary = display_summary.style.applymap(
+                lambda x: 'color: #D9534F; font-weight: bold;' if isinstance(x, str) and '%' in x and float(x.replace('%', '').replace(',', '.')) < 0 else '',
+                subset=['Рентабельность']
+            )
+            
+            st.dataframe(styled_summary, use_container_width=True, hide_index=True)
             
             # Экспорт сводной таблицы
             csv_data = summary_df.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
@@ -783,7 +797,8 @@ if page == "📈 Продажи":
                 "📥 Скачать сводку по ТОП-5 контрагентам (CSV)",
                 csv_data,
                 f"top5_customers_{selected_year}.csv",
-                "text/csv"
+                "text/csv",
+                use_container_width=True
             )
         
         st.caption(f"📅 Анализ по {selected_year} году | ТОП-5 контрагентов по выручке без НДС")
