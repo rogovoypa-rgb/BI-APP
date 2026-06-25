@@ -612,7 +612,7 @@ if page == "📈 Продажи":
             # Итоговые суммы
             total_revenue = customer_monthly['Выручка_без_НДС'].sum()
             total_profit = customer_monthly['Валовая_прибыль'].sum()
-            total_cost = customer_monthly['Себестоимость'].sum()
+            total_cost = customer_monthly['Себестоимость'].sum() if has_cost_column else 0
             total_quantity = customer_monthly['Количество'].sum()
             total_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
             
@@ -652,24 +652,38 @@ if page == "📈 Продажи":
             
             # Создаём таблицу для отображения
             display_df = customer_monthly[['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 
-                                           'Себестоимость', 'Рентабельность', 'Количество']].copy()
+                                           'Количество']].copy()
+            
+            # Добавляем себестоимость, если она есть
+            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
+                display_df['Себестоимость'] = customer_monthly['Себестоимость']
+            
+            # Добавляем рентабельность
+            display_df['Рентабельность'] = customer_monthly['Рентабельность']
             
             # Переименовываем колонки
-            display_df = display_df.rename(columns={
+            rename_dict = {
                 'Название': 'Месяц',
                 'Выручка_без_НДС': 'Выручка',
                 'Валовая_прибыль': 'Прибыль',
-                'Себестоимость': 'Себестоимость',
-                'Рентабельность': 'Рентабельность',
                 'Количество': 'Кол-во (шт)'
-            })
+            }
+            if has_cost_column and 'Себестоимость' in display_df.columns:
+                rename_dict['Себестоимость'] = 'Себестоимость'
             
-            # Форматирование
-            display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
-            display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
-            display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
-            display_df['Рентабельность'] = display_df['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
-            display_df['Кол-во (шт)'] = display_df['Кол-во (шт)'].apply(lambda x: format_number(x))
+            display_df = display_df.rename(columns=rename_dict)
+            
+            # Форматирование - проверяем наличие каждой колонки
+            if 'Выручка' in display_df.columns:
+                display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Прибыль' in display_df.columns:
+                display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Себестоимость' in display_df.columns:
+                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Рентабельность' in display_df.columns:
+                display_df['Рентабельность'] = display_df['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
+            if 'Кол-во (шт)' in display_df.columns:
+                display_df['Кол-во (шт)'] = display_df['Кол-во (шт)'].apply(lambda x: format_number(x))
             
             # Подсвечиваем отрицательную рентабельность
             def highlight_negative(val):
@@ -682,7 +696,10 @@ if page == "📈 Продажи":
                         pass
                 return ''
             
-            styled_df = display_df.style.applymap(highlight_negative, subset=['Рентабельность'])
+            if 'Рентабельность' in display_df.columns:
+                styled_df = display_df.style.applymap(highlight_negative, subset=['Рентабельность'])
+            else:
+                styled_df = display_df.style
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
