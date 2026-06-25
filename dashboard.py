@@ -569,7 +569,7 @@ if page == "📈 Продажи":
         st.subheader(f"📊 ДЕТАЛЬНЫЙ АНАЛИЗ ТОП-5 ПОКУПАТЕЛЕЙ ЗА {selected_year}")
         st.markdown("По каждому контрагенту: выручка, прибыль, себестоимость, рентабельность, количество (шт) по месяцам")
         
-        # Функция для отображения таблицы одного контрагента
+        # Функция для отображения таблицы одного контрагента (исправленная версия)
         def display_customer_analysis(customer_name, df_year, available_months_num, has_cost_column):
             """Отображает детальный анализ по одному контрагенту"""
             
@@ -647,41 +647,23 @@ if page == "📈 Продажи":
             with col_m5:
                 st.metric("📦 Продано (шт)", f"{format_number(total_quantity)}")
             
-            # Таблица по месяцам
+            # Таблица по месяцам (НОВЫЙ ПОДХОД – без apply и переименований)
             st.markdown("**📋 Помесячная детализация:**")
             
-            # Формируем список колонок для отображения
-            cols_to_include = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
-            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
-                cols_to_include.append('Себестоимость')
-            
-            # Создаём копию DataFrame с нужными колонками
-            display_df = customer_monthly[cols_to_include].copy()
-            
-            # Переименовываем колонки
-            rename_dict = {
-                'Название': 'Месяц',
-                'Выручка_без_НДС': 'Выручка',
-                'Валовая_прибыль': 'Прибыль',
-                'Количество': 'Кол-во (шт)',
-                'Рентабельность': 'Рентабельность'
+            # Формируем данные для таблицы в виде словаря
+            table_data = {
+                'Месяц': customer_monthly['Название'].tolist(),
+                'Выручка': [f"{format_number(x)} ₽" for x in customer_monthly['Выручка_без_НДС']],
+                'Прибыль': [f"{format_number(x)} ₽" for x in customer_monthly['Валовая_прибыль']],
+                'Рентабельность': [f"{format_float(x, 1)}%" for x in customer_monthly['Рентабельность']],
+                'Кол-во (шт)': [format_number(x) for x in customer_monthly['Количество']]
             }
-            if has_cost_column and 'Себестоимость' in display_df.columns:
-                rename_dict['Себестоимость'] = 'Себестоимость'
             
-            display_df = display_df.rename(columns=rename_dict)
+            # Добавляем себестоимость, если она есть в данных
+            if has_cost_column:
+                table_data['Себестоимость'] = [f"{format_number(x)} ₽" for x in customer_monthly['Себестоимость']]
             
-            # Форматирование - проверяем наличие каждой колонки
-            if 'Выручка' in display_df.columns:
-                display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
-            if 'Прибыль' in display_df.columns:
-                display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
-            if 'Себестоимость' in display_df.columns:
-                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
-            if 'Рентабельность' in display_df.columns:
-                display_df['Рентабельность'] = display_df['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
-            if 'Кол-во (шт)' in display_df.columns:
-                display_df['Кол-во (шт)'] = display_df['Кол-во (шт)'].apply(lambda x: format_number(x))
+            display_df = pd.DataFrame(table_data)
             
             # Подсвечиваем отрицательную рентабельность
             def highlight_negative(val):
@@ -694,11 +676,7 @@ if page == "📈 Продажи":
                         pass
                 return ''
             
-            if 'Рентабельность' in display_df.columns:
-                styled_df = display_df.style.applymap(highlight_negative, subset=['Рентабельность'])
-            else:
-                styled_df = display_df.style
-            
+            styled_df = display_df.style.applymap(highlight_negative, subset=['Рентабельность'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             # График динамики
