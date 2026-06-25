@@ -650,33 +650,30 @@ if page == "📈 Продажи":
             # Таблица по месяцам
             st.markdown("**📋 Помесячная детализация:**")
             
-            # Создаём таблицу для отображения - включаем все нужные колонки
-            columns_to_include = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
-            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
-                columns_to_include.append('Себестоимость')
+            # Создаём таблицу для отображения - включаем только существующие колонки
+            base_columns = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
+            display_df = customer_monthly[base_columns].copy()
             
-            display_df = customer_monthly[columns_to_include].copy()
-            
-            # Переименовываем колонки
-            rename_dict = {
+            # Переименовываем базовые колонки
+            display_df = display_df.rename(columns={
                 'Название': 'Месяц',
                 'Выручка_без_НДС': 'Выручка',
                 'Валовая_прибыль': 'Прибыль',
                 'Количество': 'Кол-во (шт)',
                 'Рентабельность': 'Рентабельность'
-            }
-            if has_cost_column and 'Себестоимость' in display_df.columns:
-                rename_dict['Себестоимость'] = 'Себестоимость'
+            })
             
-            display_df = display_df.rename(columns=rename_dict)
+            # Добавляем себестоимость только если она есть и форматируем сразу
+            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
+                display_df['Себестоимость'] = customer_monthly['Себестоимость'].values
+                # Форматируем себестоимость
+                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
             
-            # Форматирование - проверяем наличие каждой колонки
+            # Форматирование остальных колонок
             if 'Выручка' in display_df.columns:
                 display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Прибыль' in display_df.columns:
                 display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
-            if 'Себестоимость' in display_df.columns:
-                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Рентабельность' in display_df.columns:
                 display_df['Рентабельность'] = display_df['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
             if 'Кол-во (шт)' in display_df.columns:
