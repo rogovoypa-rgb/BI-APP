@@ -611,23 +611,39 @@ if page == "📈 Продажи":
             with col_m5:
                 st.metric("📦 Продано (шт)", f"{format_number(total_quantity)}")
             
-            # Таблица по месяцам (новый подход – без apply и переименований)
+            # Таблица по месяцам (НАДЁЖНЫЙ ПОДХОД)
             st.markdown("**📋 Помесячная детализация:**")
             
-            # Формируем данные для таблицы в виде словаря
-            table_data = {
-                'Месяц': customer_monthly['Название'].tolist(),
-                'Выручка': [f"{format_number(x)} ₽" for x in customer_monthly['Выручка_без_НДС']],
-                'Прибыль': [f"{format_number(x)} ₽" for x in customer_monthly['Валовая_прибыль']],
-                'Рентабельность': [f"{format_float(x, 1)}%" for x in customer_monthly['Рентабельность']],
-                'Кол-во (шт)': [format_number(x) for x in customer_monthly['Количество']]
-            }
-            
-            # Добавляем себестоимость, если она есть в данных
+            # Выбираем колонки для отображения
+            cols_to_keep = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
             if has_cost_column:
-                table_data['Себестоимость'] = [f"{format_number(x)} ₽" for x in customer_monthly['Себестоимость']]
+                cols_to_keep.append('Себестоимость')
             
-            display_df = pd.DataFrame(table_data)
+            display_df = customer_monthly[cols_to_keep].copy()
+            
+            # Переименовываем колонки
+            rename_map = {
+                'Название': 'Месяц',
+                'Выручка_без_НДС': 'Выручка',
+                'Валовая_прибыль': 'Прибыль',
+                'Количество': 'Кол-во (шт)',
+                'Рентабельность': 'Рентабельность'
+            }
+            if has_cost_column:
+                rename_map['Себестоимость'] = 'Себестоимость'
+            display_df = display_df.rename(columns=rename_map)
+            
+            # Форматируем колонки с помощью apply
+            if 'Выручка' in display_df.columns:
+                display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Прибыль' in display_df.columns:
+                display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Себестоимость' in display_df.columns:
+                display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Рентабельность' in display_df.columns:
+                display_df['Рентабельность'] = display_df['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
+            if 'Кол-во (шт)' in display_df.columns:
+                display_df['Кол-во (шт)'] = display_df['Кол-во (шт)'].apply(lambda x: format_number(x))
             
             # Подсвечиваем отрицательную рентабельность
             def highlight_negative(val):
