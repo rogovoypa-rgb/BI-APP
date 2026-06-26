@@ -471,18 +471,18 @@ if page == "📈 Продажи":
         st.divider()
         
         # ==========================================
-        # ТОП-5 КОНТРАГЕНТОВ (СВОДНАЯ ТАБЛИЦА)
+        # ТОП-5 КОНТРАГЕНТОВ ПО ВЫРУЧКЕ (СВОДНАЯ ТАБЛИЦА)
         # ==========================================
-        st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ЗА {selected_year}")
+        st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ПО ВЫРУЧКЕ ЗА {selected_year}")
         
         cust_rev = df_year.groupby('Контрагент')['Выручка_без_НДС'].sum().reset_index()
         cust_rev = cust_rev.sort_values('Выручка_без_НДС', ascending=False)
-        top5 = cust_rev.head(5)['Контрагент'].tolist()
+        top5_revenue = cust_rev.head(5)['Контрагент'].tolist()
         
         monthly_cust = df_year.groupby(['Контрагент', 'Период.Месяц'])['Выручка_без_НДС'].sum().reset_index()
         
         table_data = []
-        for c in top5:
+        for c in top5_revenue:
             row = {'Контрагент': c}
             row['Год'] = cust_rev[cust_rev['Контрагент'] == c]['Выручка_без_НДС'].values[0]
             for m in available_months_num:
@@ -490,15 +490,15 @@ if page == "📈 Продажи":
                 row[month_names[m]] = val
             table_data.append(row)
         
-        other_rev = cust_rev[~cust_rev['Контрагент'].isin(top5)]['Выручка_без_НДС'].sum()
+        other_rev = cust_rev[~cust_rev['Контрагент'].isin(top5_revenue)]['Выручка_без_НДС'].sum()
         other_row = {'Контрагент': '📦 ОСТАЛЬНЫЕ'}
         other_row['Год'] = other_rev
         for m in available_months_num:
-            val = monthly_cust[(~monthly_cust['Контрагент'].isin(top5)) & (monthly_cust['Период.Месяц'] == m)]['Выручка_без_НДС'].sum()
+            val = monthly_cust[(~monthly_cust['Контрагент'].isin(top5_revenue)) & (monthly_cust['Период.Месяц'] == m)]['Выручка_без_НДС'].sum()
             other_row[month_names[m]] = val
         table_data.append(other_row)
         
-        df_top5 = pd.DataFrame(table_data)
+        df_top5_rev = pd.DataFrame(table_data)
         
         def fmt(x):
             return f"{int(x):,}".replace(",", " ") if x > 0 else "0"
@@ -510,7 +510,7 @@ if page == "📈 Продажи":
             html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
         html += '<tr>'
         
-        for _, row in df_top5.iterrows():
+        for _, row in df_top5_rev.iterrows():
             html += '<tr>'
             html += f'<td style="padding:6px; font-weight:bold">{row["Контрагент"]}</td>'
             html += f'<td style="padding:6px; font-weight:bold">{fmt(row["Год"])} ₽</td>'
@@ -522,19 +522,164 @@ if page == "📈 Продажи":
         
         st.markdown(html, unsafe_allow_html=True)
         
-        total_top5 = cust_rev[cust_rev['Контрагент'].isin(top5)]['Выручка_без_НДС'].sum()
-        st.caption(f"📊 Топ-5: {format_number(total_top5)} ₽ ({format_float(total_top5/year_revenue*100,1)}% от общей выручки без НДС)")
+        total_top5_rev = cust_rev[cust_rev['Контрагент'].isin(top5_revenue)]['Выручка_без_НДС'].sum()
+        st.caption(f"📊 Топ-5: {format_number(total_top5_rev)} ₽ ({format_float(total_top5_rev/year_revenue*100,1)}% от общей выручки без НДС)")
         
         st.divider()
         
         # ==========================================
-        # ДЕТАЛЬНЫЙ АНАЛИЗ КАЖДОГО ИЗ ТОП-5 ПОКУПАТЕЛЕЙ (УПРОЩЁННЫЙ)
+        # ТОП-5 КОНТРАГЕНТОВ ПО СЕБЕСТОИМОСТИ
         # ==========================================
-        st.subheader(f"📊 ДЕТАЛЬНЫЙ АНАЛИЗ ТОП-5 ПОКУПАТЕЛЕЙ ЗА {selected_year}")
-        st.markdown("По каждому контрагенту: выручка, себестоимость, прибыль, рентабельность по месяцам")
+        if has_cost_column:
+            st.subheader(f"📊 ТОП-5 КОНТРАГЕНТОВ ПО СЕБЕСТОИМОСТИ ЗА {selected_year}")
+            
+            cust_cost = df_year.groupby('Контрагент')['Себестоимость'].sum().reset_index()
+            cust_cost = cust_cost.sort_values('Себестоимость', ascending=False)
+            top5_cost = cust_cost.head(5)['Контрагент'].tolist()
+            
+            monthly_cust_cost = df_year.groupby(['Контрагент', 'Период.Месяц'])['Себестоимость'].sum().reset_index()
+            
+            table_data_cost = []
+            for c in top5_cost:
+                row = {'Контрагент': c}
+                row['Год'] = cust_cost[cust_cost['Контрагент'] == c]['Себестоимость'].values[0]
+                for m in available_months_num:
+                    val = monthly_cust_cost[(monthly_cust_cost['Контрагент'] == c) & (monthly_cust_cost['Период.Месяц'] == m)]['Себестоимость'].sum()
+                    row[month_names[m]] = val
+                table_data_cost.append(row)
+            
+            other_cost = cust_cost[~cust_cost['Контрагент'].isin(top5_cost)]['Себестоимость'].sum()
+            other_row_cost = {'Контрагент': '📦 ОСТАЛЬНЫЕ'}
+            other_row_cost['Год'] = other_cost
+            for m in available_months_num:
+                val = monthly_cust_cost[(~monthly_cust_cost['Контрагент'].isin(top5_cost)) & (monthly_cust_cost['Период.Месяц'] == m)]['Себестоимость'].sum()
+                other_row_cost[month_names[m]] = val
+            table_data_cost.append(other_row_cost)
+            
+            df_top5_cost = pd.DataFrame(table_data_cost)
+            
+            html_cost = '<table style="width:100%; border-collapse:collapse">'
+            html_cost += '<tr style="background:#D9534F; color:white">'
+            html_cost += '<th style="padding:8px">Контрагент</th><th>📦 Себестоимость за год</th>'
+            for m in available_months_num:
+                html_cost += f'<th style="padding:8px">{month_names[m][:3]}</th>'
+            html_cost += '<tr>'
+            
+            for _, row in df_top5_cost.iterrows():
+                html_cost += '<tr>'
+                html_cost += f'<td style="padding:6px; font-weight:bold">{row["Контрагент"]}</td>'
+                html_cost += f'<td style="padding:6px; font-weight:bold">{fmt(row["Год"])} ₽</td>'
+                for m in available_months_num:
+                    val = row[month_names[m]]
+                    html_cost += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
+                html_cost += '</tr>'
+            html_cost += '</table>'
+            
+            st.markdown(html_cost, unsafe_allow_html=True)
+            
+            total_top5_cost = cust_cost[cust_cost['Контрагент'].isin(top5_cost)]['Себестоимость'].sum()
+            total_cost_all = cust_cost['Себестоимость'].sum()
+            st.caption(f"📊 Топ-5: {format_number(total_top5_cost)} ₽ ({format_float(total_top5_cost/total_cost_all*100,1)}% от общей себестоимости)")
+            
+            st.divider()
         
-        def display_customer_analysis(customer_name):
-            """Упрощённый анализ по одному контрагенту (без графиков, только таблица)"""
+        # ==========================================
+        # ТОП-5 КОНТРАГЕНТОВ ПО РЕНТАБЕЛЬНОСТИ
+        # ==========================================
+        st.subheader(f"🎯 ТОП-5 КОНТРАГЕНТОВ ПО РЕНТАБЕЛЬНОСТИ ЗА {selected_year}")
+        
+        # Рассчитываем рентабельность для каждого контрагента
+        cust_margin = df_year.groupby('Контрагент').agg({
+            'Выручка_без_НДС': 'sum',
+            'Валовая_прибыль': 'sum'
+        }).reset_index()
+        cust_margin['Рентабельность'] = (cust_margin['Валовая_прибыль'] / cust_margin['Выручка_без_НДС'] * 100).fillna(0)
+        
+        # Фильтруем контрагентов с выручкой > 0 и сортируем по рентабельности
+        cust_margin = cust_margin[cust_margin['Выручка_без_НДС'] > 0]
+        cust_margin = cust_margin.sort_values('Рентабельность', ascending=False)
+        top5_margin = cust_margin.head(5)['Контрагент'].tolist()
+        
+        # Для помесячной разбивки нужны данные по месяцам
+        monthly_cust_margin = df_year.groupby(['Контрагент', 'Период.Месяц']).agg({
+            'Выручка_без_НДС': 'sum',
+            'Валовая_прибыль': 'sum'
+        }).reset_index()
+        
+        table_data_margin = []
+        for c in top5_margin:
+            row = {'Контрагент': c}
+            # Годовая рентабельность
+            row['Год'] = cust_margin[cust_margin['Контрагент'] == c]['Рентабельность'].values[0]
+            for m in available_months_num:
+                df_m = monthly_cust_margin[(monthly_cust_margin['Контрагент'] == c) & (monthly_cust_margin['Период.Месяц'] == m)]
+                if not df_m.empty:
+                    rev = df_m['Выручка_без_НДС'].sum()
+                    profit = df_m['Валовая_прибыль'].sum()
+                    marg = (profit / rev * 100) if rev > 0 else 0
+                    row[month_names[m]] = marg
+                else:
+                    row[month_names[m]] = 0
+            table_data_margin.append(row)
+        
+        # Добавляем строку "ОСТАЛЬНЫЕ" с средней рентабельностью
+        other_customers = cust_margin[~cust_margin['Контрагент'].isin(top5_margin)]
+        if not other_customers.empty:
+            other_avg_margin = (other_customers['Валовая_прибыль'].sum() / other_customers['Выручка_без_НДС'].sum() * 100) if other_customers['Выручка_без_НДС'].sum() > 0 else 0
+        else:
+            other_avg_margin = 0
+        
+        other_row_margin = {'Контрагент': '📦 ОСТАЛЬНЫЕ'}
+        other_row_margin['Год'] = other_avg_margin
+        for m in available_months_num:
+            df_m = monthly_cust_margin[(~monthly_cust_margin['Контрагент'].isin(top5_margin)) & (monthly_cust_margin['Период.Месяц'] == m)]
+            if not df_m.empty:
+                rev = df_m['Выручка_без_НДС'].sum()
+                profit = df_m['Валовая_прибыль'].sum()
+                marg = (profit / rev * 100) if rev > 0 else 0
+                other_row_margin[month_names[m]] = marg
+            else:
+                other_row_margin[month_names[m]] = 0
+        table_data_margin.append(other_row_margin)
+        
+        df_top5_margin = pd.DataFrame(table_data_margin)
+        
+        def fmt_margin(x):
+            return f"{format_float(x, 1)}%"
+        
+        html_margin = '<table style="width:100%; border-collapse:collapse">'
+        html_margin += '<tr style="background:#52B788; color:white">'
+        html_margin += '<th style="padding:8px">Контрагент</th><th>🎯 Рентабельность за год</th>'
+        for m in available_months_num:
+            html_margin += f'<th style="padding:8px">{month_names[m][:3]}</th>'
+        html_margin += '<tr>'
+        
+        for _, row in df_top5_margin.iterrows():
+            html_margin += '<tr>'
+            html_margin += f'<td style="padding:6px; font-weight:bold">{row["Контрагент"]}</td>'
+            html_margin += f'<td style="padding:6px; font-weight:bold">{fmt_margin(row["Год"])}</td>'
+            for m in available_months_num:
+                val = row[month_names[m]]
+                html_margin += f'<td style="padding:6px; font-size:12px">{fmt_margin(val)}</td>'
+            html_margin += '</tr>'
+        html_margin += '</table>'
+        
+        st.markdown(html_margin, unsafe_allow_html=True)
+        
+        # Средняя рентабельность по всем контрагентам
+        avg_margin_all = (cust_margin['Валовая_прибыль'].sum() / cust_margin['Выручка_без_НДС'].sum() * 100) if cust_margin['Выручка_без_НДС'].sum() > 0 else 0
+        st.caption(f"📊 Средняя рентабельность по всем контрагентам: {format_float(avg_margin_all, 1)}%")
+        
+        st.divider()
+        
+        # ==========================================
+        # ДЕТАЛЬНЫЙ АНАЛИЗ КАЖДОГО ИЗ ТОП-5 ПО ВЫРУЧКЕ
+        # ==========================================
+        st.subheader(f"📊 ДЕТАЛЬНЫЙ АНАЛИЗ ТОП-5 ПОКУПАТЕЛЕЙ ПО ВЫРУЧКЕ ЗА {selected_year}")
+        st.markdown("По каждому контрагенту: выручка, прибыль, себестоимость, рентабельность, количество (шт) по месяцам")
+        
+        def display_customer_analysis(customer_name, df_year, available_months_num, has_cost_column):
+            """Отображает детальный анализ по одному контрагенту"""
             
             # Фильтруем данные по контрагенту
             df_customer = df_year[df_year['Контрагент'] == customer_name]
@@ -544,15 +689,21 @@ if page == "📈 Продажи":
                 return
             
             # Агрегируем по месяцам
-            agg_dict = {
-                'Выручка_без_НДС': 'sum',
-                'Валовая_прибыль': 'sum',
-                'Количество': 'sum'
-            }
             if has_cost_column:
-                agg_dict['Себестоимость'] = 'sum'
-            
-            customer_monthly = df_customer.groupby('Период.Месяц').agg(agg_dict).reset_index()
+                customer_monthly = df_customer.groupby('Период.Месяц').agg({
+                    'Выручка_без_НДС': 'sum',
+                    'Валовая_прибыль': 'sum',
+                    'Количество': 'sum',
+                    'Себестоимость': 'sum'
+                }).reset_index()
+                customer_monthly['Себестоимость'] = customer_monthly['Себестоимость'].fillna(0)
+            else:
+                customer_monthly = df_customer.groupby('Период.Месяц').agg({
+                    'Выручка_без_НДС': 'sum',
+                    'Валовая_прибыль': 'sum',
+                    'Количество': 'sum'
+                }).reset_index()
+                customer_monthly['Себестоимость'] = 0
             
             # Добавляем названия месяцев
             customer_monthly['Название'] = customer_monthly['Период.Месяц'].map(month_names)
@@ -607,27 +758,30 @@ if page == "📈 Продажи":
             # Таблица по месяцам
             st.markdown("**📋 Помесячная детализация:**")
             
-            # Формируем DataFrame для отображения
-            display_df = customer_monthly[['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Рентабельность', 'Количество']].copy()
+            # Базовые колонки
+            base_columns = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
             if has_cost_column:
-                display_df['Себестоимость'] = customer_monthly['Себестоимость']
+                base_columns.append('Себестоимость')
             
-            # Переименовываем колонки
+            display_df = customer_monthly[base_columns].copy()
+            
+            # Переименовываем
             rename_map = {
                 'Название': 'Месяц',
                 'Выручка_без_НДС': 'Выручка',
                 'Валовая_прибыль': 'Прибыль',
-                'Рентабельность': 'Рентабельность',
-                'Количество': 'Кол-во (шт)'
+                'Количество': 'Кол-во (шт)',
+                'Рентабельность': 'Рентабельность'
             }
             if has_cost_column:
                 rename_map['Себестоимость'] = 'Себестоимость'
             display_df = display_df.rename(columns=rename_map)
             
-            # Форматирование значений
-            for col in ['Выручка', 'Прибыль']:
-                if col in display_df.columns:
-                    display_df[col] = display_df[col].apply(lambda x: f"{format_number(x)} ₽")
+            # Форматируем
+            if 'Выручка' in display_df.columns:
+                display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
+            if 'Прибыль' in display_df.columns:
+                display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Себестоимость' in display_df.columns:
                 display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Рентабельность' in display_df.columns:
@@ -649,7 +803,7 @@ if page == "📈 Продажи":
             styled_df = display_df.style.applymap(highlight_negative, subset=['Рентабельность'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # График (выручка и прибыль)
+            # График
             fig_customer = go.Figure()
             
             fig_customer.add_trace(go.Bar(
@@ -701,28 +855,24 @@ if page == "📈 Продажи":
             
             st.plotly_chart(fig_customer, use_container_width=True)
             
-            # Разделитель
             st.markdown("---")
         
-        # ===== ВЫВОДИМ АНАЛИЗ ДЛЯ КАЖДОГО ИЗ ТОП-5 =====
-        for customer in top5:
-            display_customer_analysis(customer)
+        # ===== ВЫВОДИМ АНАЛИЗ ДЛЯ ТОП-5 ПО ВЫРУЧКЕ =====
+        for customer in top5_revenue:
+            display_customer_analysis(customer, df_year, available_months_num, has_cost_column)
         
-        # ===== ТАБЛИЦА СВОДКА ПО ВСЕМ ТОП-5 =====
-        st.subheader(f"📊 СВОДНАЯ ТАБЛИЦА ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year}")
+        # ===== ТАБЛИЦА СВОДКА ПО ТОП-5 ПО ВЫРУЧКЕ =====
+        st.subheader(f"📊 СВОДНАЯ ТАБЛИЦА ПО ТОП-5 КОНТРАГЕНТАМ (ПО ВЫРУЧКЕ) ЗА {selected_year}")
         
-        # Собираем данные по всем топ-5 контрагентам
         summary_top5 = []
-        for customer in top5:
+        for customer in top5_revenue:
             df_customer = df_year[df_year['Контрагент'] == customer]
-            
             if not df_customer.empty:
                 total_rev = df_customer['Выручка_без_НДС'].sum()
                 total_profit = df_customer['Валовая_прибыль'].sum()
                 total_cost = df_customer['Себестоимость'].sum() if has_cost_column else 0
                 total_qty = df_customer['Количество'].sum()
                 margin = (total_profit / total_rev * 100) if total_rev > 0 else 0
-                
                 summary_top5.append({
                     'Контрагент': customer,
                     'Выручка': total_rev,
@@ -736,7 +886,6 @@ if page == "📈 Продажи":
             summary_df = pd.DataFrame(summary_top5)
             summary_df = summary_df.sort_values('Выручка', ascending=False)
             
-            # Форматирование для отображения
             display_summary = summary_df.copy()
             display_summary['Выручка'] = display_summary['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
             display_summary['Прибыль'] = display_summary['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
@@ -744,7 +893,6 @@ if page == "📈 Продажи":
             display_summary['Рентабельность'] = display_summary['Рентабельность'].apply(lambda x: f"{format_float(x, 1)}%")
             display_summary['Кол-во (шт)'] = display_summary['Кол-во (шт)'].apply(lambda x: format_number(x))
             
-            # Подсвечиваем отрицательную рентабельность
             styled_summary = display_summary.style.applymap(
                 lambda x: 'color: #D9534F; font-weight: bold;' if isinstance(x, str) and '%' in x and float(x.replace('%', '').replace(',', '.')) < 0 else '',
                 subset=['Рентабельность']
@@ -752,7 +900,6 @@ if page == "📈 Продажи":
             
             st.dataframe(styled_summary, use_container_width=True, hide_index=True)
             
-            # Экспорт сводной таблицы
             csv_data = summary_df.to_csv(index=False, sep=';', decimal=',').encode('utf-8-sig')
             st.download_button(
                 "📥 Скачать сводку по ТОП-5 контрагентам (CSV)",
@@ -763,7 +910,6 @@ if page == "📈 Продажи":
             )
         
         st.caption(f"📅 Анализ по {selected_year} году | ТОП-5 контрагентов по выручке без НДС")
-
 # ==========================================
 # СТРАНИЦА 2: ЛОГИСТИКА (из logistics_data.xlsx)
 # ==========================================
