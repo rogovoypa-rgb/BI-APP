@@ -556,7 +556,6 @@ if page == "📈 Продажи":
                 'Валовая_прибыль': 'sum',
                 'Количество': 'sum'
             }
-            # Добавляем себестоимость, если она есть в данных
             if has_cost_column and 'Себестоимость' in df_customer.columns:
                 agg_dict['Себестоимость'] = 'sum'
             
@@ -568,20 +567,22 @@ if page == "📈 Продажи":
             customer_monthly = full_months_df.merge(customer_monthly, on='Период.Месяц', how='left')
             customer_monthly['Название'] = customer_monthly['Период.Месяц'].map(month_names)
             
-            # Приводим числовые колонки к числам и заполняем нулями
-            num_cols = ['Выручка_без_НДС', 'Валовая_прибыль', 'Количество']
-            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
-                num_cols.append('Себестоимость')
-            
-            for col in num_cols:
+            # Приводим числовые колонки к числам и заполняем нулями (с защитой от ошибок)
+            for col in ['Выручка_без_НДС', 'Валовая_прибыль', 'Количество']:
                 if col in customer_monthly.columns:
-                    # Проверяем, что колонка существует и является серией
                     try:
                         customer_monthly[col] = pd.to_numeric(customer_monthly[col], errors='coerce').fillna(0)
-                    except Exception as e:
-                        # Если не удалось преобразовать, пропускаем
-                        st.warning(f"Не удалось преобразовать колонку {col}: {e}")
-                        customer_monthly[col] = 0
+                    except Exception:
+                        # Если не удалось преобразовать, пробуем заполнить нулями как есть
+                        customer_monthly[col] = customer_monthly[col].fillna(0)
+            
+            if has_cost_column and 'Себестоимость' in customer_monthly.columns:
+                try:
+                    customer_monthly['Себестоимость'] = pd.to_numeric(customer_monthly['Себестоимость'], errors='coerce').fillna(0)
+                except Exception:
+                    customer_monthly['Себестоимость'] = customer_monthly['Себестоимость'].fillna(0)
+            else:
+                customer_monthly['Себестоимость'] = 0
             
             # Пересчитываем рентабельность, избегая деления на ноль
             rev = customer_monthly['Выручка_без_НДС']
@@ -593,7 +594,7 @@ if page == "📈 Продажи":
             # Итоги
             total_revenue = customer_monthly['Выручка_без_НДС'].sum()
             total_profit = customer_monthly['Валовая_прибыль'].sum()
-            total_cost = customer_monthly['Себестоимость'].sum() if has_cost_column and 'Себестоимость' in customer_monthly.columns else 0
+            total_cost = customer_monthly['Себестоимость'].sum() if has_cost_column else 0
             total_quantity = customer_monthly['Количество'].sum()
             total_margin = (total_profit / total_revenue * 100) if total_revenue > 0 else 0
             
@@ -762,7 +763,6 @@ if page == "📈 Продажи":
             )
         
         st.caption(f"📅 Анализ по {selected_year} году | ТОП-5 контрагентов по выручке без НДС")
-
 
 
 
