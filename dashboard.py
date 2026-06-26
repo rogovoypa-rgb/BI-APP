@@ -472,7 +472,72 @@ if page == "📈 Продажи":
             st.markdown(f"<div style='font-size: 16px;'><b>{format_number(year_quantity)}</b></div>", unsafe_allow_html=True)
         
         st.caption(f"📅 Анализ по {selected_year} году")
+        st.divider()
         
+        # ==========================================
+        # ТОП-5 КОНТРАГЕНТОВ ПО ВЫРУЧКЕ (СВОДНАЯ ТАБЛИЦА)
+        # ==========================================
+        st.subheader(f"🏆 ТОП-5 КОНТРАГЕНТОВ ПО ВЫРУЧКЕ ЗА {selected_year}")
+        
+        # Убедимся, что колонка 'Контрагент' существует
+        if 'Контрагент' not in df_year.columns:
+            st.warning("Колонка 'Контрагент' отсутствует в данных")
+        else:
+            cust_rev = df_year.groupby('Контрагент')['Выручка_без_НДС'].sum().reset_index()
+            cust_rev = cust_rev.sort_values('Выручка_без_НДС', ascending=False)
+            top5_revenue = cust_rev.head(5)['Контрагент'].tolist()
+            
+            # Месяцы, по которым есть данные (можно использовать все 12, но лучше взять те, что есть)
+            available_months = sorted(df_year['Период.Месяц'].unique())
+            monthly_cust = df_year.groupby(['Контрагент', 'Период.Месяц'])['Выручка_без_НДС'].sum().reset_index()
+            
+            table_data = []
+            for c in top5_revenue:
+                row = {'Контрагент': c}
+                row['Год'] = cust_rev[cust_rev['Контрагент'] == c]['Выручка_без_НДС'].values[0]
+                for m in available_months:
+                    val = monthly_cust[(monthly_cust['Контрагент'] == c) & (monthly_cust['Период.Месяц'] == m)]['Выручка_без_НДС'].sum()
+                    row[month_names[m]] = val
+                table_data.append(row)
+            
+            # Добавляем строку "Остальные"
+            other_rev = cust_rev[~cust_rev['Контрагент'].isin(top5_revenue)]['Выручка_без_НДС'].sum()
+            other_row = {'Контрагент': '📦 ОСТАЛЬНЫЕ'}
+            other_row['Год'] = other_rev
+            for m in available_months:
+                val = monthly_cust[(~monthly_cust['Контрагент'].isin(top5_revenue)) & (monthly_cust['Период.Месяц'] == m)]['Выручка_без_НДС'].sum()
+                other_row[month_names[m]] = val
+            table_data.append(other_row)
+            
+            df_top5 = pd.DataFrame(table_data)
+            
+            # Форматирование чисел
+            def fmt(x):
+                return f"{int(x):,}".replace(",", " ") if x > 0 else "0"
+            
+            # Генерируем HTML таблицы
+            html = '<table style="width:100%; border-collapse:collapse">'
+            html += '<tr style="background:#2E86AB; color:white">'
+            html += '<th style="padding:8px">Контрагент</th><th>💰 Выручка без НДС за год</th>'
+            for m in available_months:
+                html += f'<th style="padding:8px">{month_names[m][:3]}</th>'
+            html += '</tr>'
+            
+            for _, row in df_top5.iterrows():
+                html += '<tr>'
+                html += f'<td style="padding:6px; font-weight:bold">{row["Контрагент"]}</td>'
+                html += f'<td style="padding:6px; font-weight:bold">{fmt(row["Год"])} ₽</td>'
+                for m in available_months:
+                    val = row[month_names[m]]
+                    html += f'<td style="padding:6px; font-size:12px">{fmt(val)} ₽</td>'
+                html += '</tr>'
+            html += '</table>'
+            
+            st.markdown(html, unsafe_allow_html=True)
+            
+            total_top5 = cust_rev[cust_rev['Контрагент'].isin(top5_revenue)]['Выручка_без_НДС'].sum()
+            year_revenue = cust_rev['Выручка_без_НДС'].sum()
+            st.caption(f"📊 Топ-5: {format_number(total_top5)} ₽ ({format_float(total_top5/year_revenue*100,1)}% от общей выручки без НДС)")        
 
 
 
