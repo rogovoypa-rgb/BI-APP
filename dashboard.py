@@ -329,7 +329,6 @@ st.sidebar.divider()
 if st.sidebar.button("🔄 Принудительно обновить данные", use_container_width=True):
     st.cache_data.clear()
     st.rerun()
-
 # ==========================================
 # СТРАНИЦА 1: ПРОДАЖИ (С АНАЛИЗОМ ТОП-5 ПОКУПАТЕЛЕЙ)
 # ==========================================
@@ -529,13 +528,13 @@ if page == "📈 Продажи":
         st.divider()
         
         # ==========================================
-        # ДЕТАЛЬНЫЙ АНАЛИЗ КАЖДОГО ИЗ ТОП-5 ПОКУПАТЕЛЕЙ
+        # ДЕТАЛЬНЫЙ АНАЛИЗ КАЖДОГО ИЗ ТОП-5 ПОКУПАТЕЛЕЙ (УПРОЩЁННЫЙ)
         # ==========================================
         st.subheader(f"📊 ДЕТАЛЬНЫЙ АНАЛИЗ ТОП-5 ПОКУПАТЕЛЕЙ ЗА {selected_year}")
-        st.markdown("По каждому контрагенту: выручка, прибыль, себестоимость, рентабельность, количество (шт) по месяцам")
+        st.markdown("По каждому контрагенту: выручка, себестоимость, прибыль, рентабельность по месяцам")
         
-        def display_customer_analysis(customer_name, df_year, available_months_num, has_cost_column):
-            """Отображает детальный анализ по одному контрагенту"""
+        def display_customer_analysis(customer_name):
+            """Упрощённый анализ по одному контрагенту (без графиков, только таблица)"""
             
             # Фильтруем данные по контрагенту
             df_customer = df_year[df_year['Контрагент'] == customer_name]
@@ -545,21 +544,15 @@ if page == "📈 Продажи":
                 return
             
             # Агрегируем по месяцам
+            agg_dict = {
+                'Выручка_без_НДС': 'sum',
+                'Валовая_прибыль': 'sum',
+                'Количество': 'sum'
+            }
             if has_cost_column:
-                customer_monthly = df_customer.groupby('Период.Месяц').agg({
-                    'Выручка_без_НДС': 'sum',
-                    'Валовая_прибыль': 'sum',
-                    'Количество': 'sum',
-                    'Себестоимость': 'sum'
-                }).reset_index()
-                customer_monthly['Себестоимость'] = customer_monthly['Себестоимость'].fillna(0)
-            else:
-                customer_monthly = df_customer.groupby('Период.Месяц').agg({
-                    'Выручка_без_НДС': 'sum',
-                    'Валовая_прибыль': 'sum',
-                    'Количество': 'sum'
-                }).reset_index()
-                customer_monthly['Себестоимость'] = 0
+                agg_dict['Себестоимость'] = 'sum'
+            
+            customer_monthly = df_customer.groupby('Период.Месяц').agg(agg_dict).reset_index()
             
             # Добавляем названия месяцев
             customer_monthly['Название'] = customer_monthly['Период.Месяц'].map(month_names)
@@ -611,33 +604,30 @@ if page == "📈 Продажи":
             with col_m5:
                 st.metric("📦 Продано (шт)", f"{format_number(total_quantity)}")
             
-            # Таблица по месяцам (НАДЁЖНЫЙ ПОДХОД)
+            # Таблица по месяцам
             st.markdown("**📋 Помесячная детализация:**")
             
-            # Выбираем колонки для отображения
-            cols_to_keep = ['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Количество', 'Рентабельность']
+            # Формируем DataFrame для отображения
+            display_df = customer_monthly[['Название', 'Выручка_без_НДС', 'Валовая_прибыль', 'Рентабельность', 'Количество']].copy()
             if has_cost_column:
-                cols_to_keep.append('Себестоимость')
-            
-            display_df = customer_monthly[cols_to_keep].copy()
+                display_df['Себестоимость'] = customer_monthly['Себестоимость']
             
             # Переименовываем колонки
             rename_map = {
                 'Название': 'Месяц',
                 'Выручка_без_НДС': 'Выручка',
                 'Валовая_прибыль': 'Прибыль',
-                'Количество': 'Кол-во (шт)',
-                'Рентабельность': 'Рентабельность'
+                'Рентабельность': 'Рентабельность',
+                'Количество': 'Кол-во (шт)'
             }
             if has_cost_column:
                 rename_map['Себестоимость'] = 'Себестоимость'
             display_df = display_df.rename(columns=rename_map)
             
-            # Форматируем колонки с помощью apply
-            if 'Выручка' in display_df.columns:
-                display_df['Выручка'] = display_df['Выручка'].apply(lambda x: f"{format_number(x)} ₽")
-            if 'Прибыль' in display_df.columns:
-                display_df['Прибыль'] = display_df['Прибыль'].apply(lambda x: f"{format_number(x)} ₽")
+            # Форматирование значений
+            for col in ['Выручка', 'Прибыль']:
+                if col in display_df.columns:
+                    display_df[col] = display_df[col].apply(lambda x: f"{format_number(x)} ₽")
             if 'Себестоимость' in display_df.columns:
                 display_df['Себестоимость'] = display_df['Себестоимость'].apply(lambda x: f"{format_number(x)} ₽")
             if 'Рентабельность' in display_df.columns:
@@ -645,7 +635,7 @@ if page == "📈 Продажи":
             if 'Кол-во (шт)' in display_df.columns:
                 display_df['Кол-во (шт)'] = display_df['Кол-во (шт)'].apply(lambda x: format_number(x))
             
-            # Подсвечиваем отрицательную рентабельность
+            # Подсветка отрицательной рентабельности
             def highlight_negative(val):
                 if isinstance(val, str) and '%' in val:
                     try:
@@ -659,10 +649,9 @@ if page == "📈 Продажи":
             styled_df = display_df.style.applymap(highlight_negative, subset=['Рентабельность'])
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # График динамики
+            # График (выручка и прибыль)
             fig_customer = go.Figure()
             
-            # Выручка и прибыль
             fig_customer.add_trace(go.Bar(
                 name='Выручка',
                 x=customer_monthly['Название'],
@@ -683,7 +672,6 @@ if page == "📈 Продажи":
                 yaxis='y'
             ))
             
-            # Рентабельность (линия на второй оси)
             fig_customer.add_trace(go.Scatter(
                 name='Рентабельность',
                 x=customer_monthly['Название'],
@@ -718,7 +706,7 @@ if page == "📈 Продажи":
         
         # ===== ВЫВОДИМ АНАЛИЗ ДЛЯ КАЖДОГО ИЗ ТОП-5 =====
         for customer in top5:
-            display_customer_analysis(customer, df_year, available_months_num, has_cost_column)
+            display_customer_analysis(customer)
         
         # ===== ТАБЛИЦА СВОДКА ПО ВСЕМ ТОП-5 =====
         st.subheader(f"📊 СВОДНАЯ ТАБЛИЦА ПО ТОП-5 КОНТРАГЕНТАМ ЗА {selected_year}")
