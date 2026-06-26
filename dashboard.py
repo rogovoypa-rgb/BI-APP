@@ -531,31 +531,34 @@ if page == "📈 Продажи":
         st.divider()
         
         # ==========================================
-        # ТОП-5 КОНТРАГЕНТОВ ПО СЕБЕСТОИМОСТИ
+        # ТОП-5 КОНТРАГЕНТОВ ПО СЕБЕСТОИМОСТИ (ИСПРАВЛЕНО)
         # ==========================================
         if has_cost_column:
             st.subheader(f"📊 ТОП-5 КОНТРАГЕНТОВ ПО СЕБЕСТОИМОСТИ ЗА {selected_year}")
             
+            # Группируем и переименовываем, чтобы избежать дублирования
             cust_cost = df_year.groupby('Контрагент')['Себестоимость'].sum().reset_index()
-            cust_cost = cust_cost.sort_values('Себестоимость', ascending=False)
+            cust_cost.columns = ['Контрагент', 'Себестоимость_сумма']
+            cust_cost = cust_cost.sort_values('Себестоимость_сумма', ascending=False)
             top5_cost = cust_cost.head(5)['Контрагент'].tolist()
             
             monthly_cust_cost = df_year.groupby(['Контрагент', 'Период.Месяц'])['Себестоимость'].sum().reset_index()
+            monthly_cust_cost.columns = ['Контрагент', 'Период.Месяц', 'Себестоимость_сумма']
             
             table_data_cost = []
             for c in top5_cost:
                 row = {'Контрагент': c}
-                row['Год'] = cust_cost[cust_cost['Контрагент'] == c]['Себестоимость'].values[0]
+                row['Год'] = cust_cost[cust_cost['Контрагент'] == c]['Себестоимость_сумма'].values[0]
                 for m in available_months_num:
-                    val = monthly_cust_cost[(monthly_cust_cost['Контрагент'] == c) & (monthly_cust_cost['Период.Месяц'] == m)]['Себестоимость'].sum()
+                    val = monthly_cust_cost[(monthly_cust_cost['Контрагент'] == c) & (monthly_cust_cost['Период.Месяц'] == m)]['Себестоимость_сумма'].sum()
                     row[month_names[m]] = val
                 table_data_cost.append(row)
             
-            other_cost = cust_cost[~cust_cost['Контрагент'].isin(top5_cost)]['Себестоимость'].sum()
+            other_cost = cust_cost[~cust_cost['Контрагент'].isin(top5_cost)]['Себестоимость_сумма'].sum()
             other_row_cost = {'Контрагент': '📦 ОСТАЛЬНЫЕ'}
             other_row_cost['Год'] = other_cost
             for m in available_months_num:
-                val = monthly_cust_cost[(~monthly_cust_cost['Контрагент'].isin(top5_cost)) & (monthly_cust_cost['Период.Месяц'] == m)]['Себестоимость'].sum()
+                val = monthly_cust_cost[(~monthly_cust_cost['Контрагент'].isin(top5_cost)) & (monthly_cust_cost['Период.Месяц'] == m)]['Себестоимость_сумма'].sum()
                 other_row_cost[month_names[m]] = val
             table_data_cost.append(other_row_cost)
             
@@ -580,8 +583,8 @@ if page == "📈 Продажи":
             
             st.markdown(html_cost, unsafe_allow_html=True)
             
-            total_top5_cost = cust_cost[cust_cost['Контрагент'].isin(top5_cost)]['Себестоимость'].sum()
-            total_cost_all = cust_cost['Себестоимость'].sum()
+            total_top5_cost = cust_cost[cust_cost['Контрагент'].isin(top5_cost)]['Себестоимость_сумма'].sum()
+            total_cost_all = cust_cost['Себестоимость_сумма'].sum()
             st.caption(f"📊 Топ-5: {format_number(total_top5_cost)} ₽ ({format_float(total_top5_cost/total_cost_all*100,1)}% от общей себестоимости)")
             
             st.divider()
@@ -913,6 +916,7 @@ if page == "📈 Продажи":
             )
         
         st.caption(f"📅 Анализ по {selected_year} году | ТОП-5 контрагентов по выручке без НДС")
+        
 
 
 
